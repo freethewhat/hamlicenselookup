@@ -67,6 +67,7 @@ export function createMapView({ el, selection, loadGeo, onError }) {
         try {
           const layer = await layerFor(st);
           if (mine !== token) return;
+          layer.setStyle((f) => style(f, st, mode)); // selection may have changed while hidden
           layer.addTo(map);
           shown.add(layer);
           if (st === first && centeredOn !== `${first}:${mode}`) {

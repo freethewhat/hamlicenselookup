@@ -14,6 +14,8 @@ export function showError(message) {
 }
 
 // Show step n (1-3) and update the step bar. Step modules mount into #step-2 / #step-3.
+let areas = null;
+
 export function goToStep(n) {
   for (const section of document.querySelectorAll('.step')) section.hidden = section.id !== `step-${n}`;
   for (const li of $('step-bar').children) {
@@ -23,6 +25,7 @@ export function goToStep(n) {
     if (s === n) li.setAttribute('aria-current', 'step');
     else li.removeAttribute('aria-current');
   }
+  if (n === 1) areas?.refresh();
   window.scrollTo(0, 0);
 }
 
@@ -37,4 +40,4 @@ async function loadMeta() {
 }
 
 loadMeta();
-initAreas({ selection, onNext: () => goToStep(2), onError: showError });
+areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });

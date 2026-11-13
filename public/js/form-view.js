@@ -12,18 +12,55 @@ export function parseZips(text) {
   return { valid: [...valid], rejected };
 }
 
+// Find counties matching free text: case-insensitive, ignoring a trailing county-type word
+// and an optional ", ST". counties: [{geoid, name, state}]. Returns the matching counties.
+export function matchCounties(text, counties) {
+  let t = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  let st = null;
+  const m = t.match(/^(.*?)\s*,\s*([a-z]{2})$/);
+  if (m) {
+    t = m[1];
+    st = m[2];
+  }
+  const strip = (n) => n.toLowerCase().replace(/\s+(county|parish|borough)$/, '');
+  t = strip(t);
+  if (!t) return [];
+  return counties.filter((c) => (!st || c.state.toLowerCase() === st) && (c.name.toLowerCase() === t || strip(c.name) === t));
+}
+
 export function createFormView({ selection }) {
   const search = document.getElementById('county-search');
   const options = document.getElementById('county-options');
   const zipText = document.getElementById('zip-text');
   const rejectedEl = document.getElementById('zip-rejected');
-  let byLabel = new Map(); // "Missoula, MT" -> {geoid, label}
+  let all = [];
 
+  function addCounty() {
+    const text = search.value.trim();
+    if (!text) return;
+    const hits = matchCounties(text, all);
+    if (hits.length === 1) {
+      const c = hits[0];
+      if (!selection.has('county', c.geoid)) selection.toggle('county', c.geoid, `${c.name}, ${c.state}`);
+      search.value = '';
+      rejectedEl.textContent = '';
+    } else if (hits.length > 1) {
+      rejectedEl.textContent = `Several counties match '${text}': ${hits.map((c) => `${c.name}, ${c.state}`).join('; ')}. Add the state, like "${hits[0].name}, ${hits[0].state}".`;
+    } else {
+      rejectedEl.textContent = `No county named '${text}' in the picked states.`;
+    }
+  }
+
+  // Picking from the datalist fires 'input' with an exact label; Enter covers typed text.
   search.addEventListener('input', () => {
-    const hit = byLabel.get(search.value.trim());
-    if (!hit) return;
-    if (!selection.has('county', hit.geoid)) selection.toggle('county', hit.geoid, hit.label);
-    search.value = '';
+    const t = search.value.trim();
+    if (all.some((c) => `${c.name}, ${c.state}` === t)) addCounty();
+  });
+  search.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCounty();
+    }
   });
 
   document.getElementById('zip-add').addEventListener('click', () => {
@@ -36,11 +73,11 @@ export function createFormView({ selection }) {
   return {
     // counties: [{geoid, name, state}] for all picked states
     setCounties(counties) {
-      byLabel = new Map(counties.map((c) => [`${c.name}, ${c.state}`, { geoid: c.geoid, label: `${c.name}, ${c.state}` }]));
+      all = counties;
       options.replaceChildren(
-        ...[...byLabel.keys()].map((label) => {
+        ...counties.map((c) => {
           const o = document.createElement('option');
-          o.value = label;
+          o.value = `${c.name}, ${c.state}`;
           return o;
         }),
       );

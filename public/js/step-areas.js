@@ -51,6 +51,9 @@ export async function initAreas({ selection, onNext, onError }) {
 
   async function statesChanged() {
     renderChips();
+    $('map-hint').textContent = picked.length
+      ? 'Click a shape to add or remove it.'
+      : 'Pick a state to start. Then click a shape to add or remove it.';
     map.setStates(picked);
     try {
       await Promise.all(picked.map(loadStateData));
@@ -131,4 +134,6 @@ export async function initAreas({ selection, onNext, onError }) {
   renderChips();
   renderSelected();
   form.setCounties([]);
+  // Leaflet needs a size recalculation after its container was hidden.
+  return { refresh: () => map.refresh() };
 }
