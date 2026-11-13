@@ -12,6 +12,11 @@ export function parseZips(text) {
   return { valid: [...valid], rejected };
 }
 
+// Add ZIPs to the selection. ZIPs already picked stay picked (the chip's ✕ removes one).
+export function addZips(selection, zips) {
+  for (const z of zips) if (!selection.has('zip', z)) selection.toggle('zip', z, z);
+}
+
 // Find counties matching free text: case-insensitive, ignoring a trailing county-type word
 // and an optional ", ST". counties: [{geoid, name, state}]. Returns the matching counties.
 export function matchCounties(text, counties) {
@@ -65,7 +70,7 @@ export function createFormView({ selection }) {
 
   document.getElementById('zip-add').addEventListener('click', () => {
     const { valid, rejected } = parseZips(zipText.value);
-    for (const z of valid) selection.toggle('zip', z, z);
+    addZips(selection, valid);
     zipText.value = rejected.join(' ');
     rejectedEl.textContent = rejected.length ? `Not valid 5-digit ZIP codes: ${rejected.join(', ')}` : '';
   });

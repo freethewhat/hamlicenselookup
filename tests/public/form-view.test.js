@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchCounties, parseZips } from '../../public/js/form-view.js';
+import { addZips, matchCounties, parseZips } from '../../public/js/form-view.js';
+import { createSelection } from '../../public/js/selection.js';
 
 const counties = [
   { geoid: '30063', name: 'Missoula', state: 'MT' },
@@ -31,4 +32,12 @@ test('no match', () => {
 });
 test('parseZips splits on mixed separators and reports rejects', () => {
   assert.deepEqual(parseZips('59801, 59802\n59801 abc 1234'), { valid: ['59801', '59802'], rejected: ['abc', '1234'] });
+});
+test('adding pasted ZIPs keeps ones already picked', () => {
+  const sel = createSelection();
+  sel.toggle('zip', '59801', '59801');
+  addZips(sel, ['59801', '59802']);
+  assert.deepEqual(sel.toRequest().zips, ['59801', '59802']);
+  addZips(sel, ['59801', '59802']); // same list again changes nothing
+  assert.deepEqual(sel.toRequest().zips, ['59801', '59802']);
 });
