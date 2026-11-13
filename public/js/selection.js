@@ -20,6 +20,16 @@ export function createSelection() {
       picked.clear();
       emit();
     },
+    // Replace all picks at once (saved picks on page load). One change event, not one per item.
+    restore(items) {
+      picked.clear();
+      for (const i of items) {
+        if (typeof i?.type !== 'string' || typeof i?.id !== 'string') continue;
+        const k = key(i.type, i.id);
+        if (!picked.has(k)) picked.set(k, { type: i.type, id: i.id, label: i.label });
+      }
+      emit();
+    },
     has: (type, id) => picked.has(key(type, id)),
     items: () => [...picked.values()],
     toRequest() {
