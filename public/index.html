@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ham License Finder</title>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Ham License Finder</h1>
+    <ol class="steps" id="step-bar" aria-label="Steps">
+      <li data-step="1" class="active" aria-current="step"><span>1</span> Areas</li>
+      <li data-step="2"><span>2</span> Filters</li>
+      <li data-step="3"><span>3</span> List + export</li>
+    </ol>
+  </header>
+
+  <div id="banner-stale" class="banner warn" hidden>
+    The license data is more than 10 days old, so recent changes may be missing.
+  </div>
+  <div id="banner-error" class="banner error" role="alert" hidden></div>
+
+  <main>
+    <!-- Step 1: areas -->
+    <section id="step-1" class="step" aria-label="Step 1: pick areas">
+      <div class="field">
+        <label for="state-add">States</label>
+        <div class="row">
+          <select id="state-add"><option value="">Add a state…</option></select>
+          <ul id="state-chips" class="chips" aria-label="Picked states"></ul>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toggle" role="group" aria-label="View">
+          <button type="button" id="view-map" aria-pressed="true">Map</button>
+          <button type="button" id="view-form" aria-pressed="false">Form</button>
+        </div>
+        <div class="toggle" role="group" aria-label="Pick by">
+          <button type="button" id="mode-zip" aria-pressed="true">By ZIP</button>
+          <button type="button" id="mode-county" aria-pressed="false">By county</button>
+        </div>
+      </div>
+
+      <div id="map-panel">
+        <div id="map" role="application" aria-label="Map of ZIP codes and counties"></div>
+        <p class="hint" id="map-hint">Pick a state to start. Then click a shape to add or remove it.</p>
+      </div>
+
+      <div id="form-panel" hidden>
+        <div id="form-county" class="field">
+          <label for="county-search">Counties</label>
+          <input id="county-search" type="text" autocomplete="off" placeholder="Type to search counties…" list="county-options">
+          <datalist id="county-options"></datalist>
+          <p class="hint">Pick a state first. Choose a county from the list to add it.</p>
+        </div>
+        <div id="form-zip" class="field">
+          <label for="zip-text">ZIP codes</label>
+          <textarea id="zip-text" rows="3" placeholder="59801, 59802 59808"></textarea>
+          <div class="row">
+            <button type="button" id="zip-add">Add</button>
+            <span id="zip-rejected" class="rejected" role="status"></span>
+          </div>
+          <p class="hint">Separate with commas, spaces, or new lines. Entering a ZIP that is already picked removes it.</p>
+        </div>
+      </div>
+
+      <div class="selected">
+        <h2>Selected <span id="selected-count"></span></h2>
+        <ul id="selected-list" class="chips"></ul>
+        <p id="zip-covered" class="hint" role="status"></p>
+        <p><button type="button" id="clear-all" class="link" hidden>Clear all</button></p>
+      </div>
+
+      <div class="nav"><button type="button" id="next-1" class="primary" disabled>Next →</button></div>
+    </section>
+
+    <!-- Task 9 fills these -->
+    <section id="step-2" class="step" aria-label="Step 2: filters" hidden></section>
+    <section id="step-3" class="step" aria-label="Step 3: list and export" hidden></section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Data as of: <span id="data-as-of">unknown</span></p>
+    <p class="credits">
+      License data: FCC Universal Licensing System. ZIP and county shapes: US Census Bureau.
+      Place names: GeoNames (CC-BY 4.0). Map: &copy; OpenStreetMap contributors.
+    </p>
+  </footer>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
