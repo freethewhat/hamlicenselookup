@@ -133,7 +133,7 @@ docs/          Design, build plan, and real-data test results
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) first. Page changes must stay WCAG 2.2 AA compliant.
+Read [CLAUDE.md](CLAUDE.md) first. Page changes must stay WCAG 2.2 AA compliant; the rules are in [public/CLAUDE.md](public/CLAUDE.md).
 
 1. Make a branch, change the code, and add or update tests.
 2. Run `npm test` and `npm run lint`.

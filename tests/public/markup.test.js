@@ -1,4 +1,4 @@
-// Static checks on public/index.html for the WCAG 2.2 AA rules in AGENTS.md.
+// Static checks on public/index.html for the WCAG 2.2 AA rules in public/CLAUDE.md.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -80,9 +80,9 @@ test('every form control has a <label for>', () => {
 
 // tests/repo-hygiene.test.js checks that no club call sign appears in any file.
 
-test('AGENTS.md states the accessibility rule and README points to it', () => {
-  const agents = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
-  assert.match(agents, /WCAG 2\.2 (level )?AA/);
-  assert.match(agents, /docs\/accessibility\.md/);
-  assert.match(readFileSync(new URL('../../README.md', import.meta.url), 'utf8'), /AGENTS\.md/);
+test('public/CLAUDE.md states the accessibility rule and README points to it', () => {
+  const rules = readFileSync(new URL('../../public/CLAUDE.md', import.meta.url), 'utf8');
+  assert.match(rules, /WCAG 2\.2 (level )?AA/);
+  assert.match(rules, /docs\/accessibility\.md/);
+  assert.match(readFileSync(new URL('../../README.md', import.meta.url), 'utf8'), /public\/CLAUDE\.md/);
 });

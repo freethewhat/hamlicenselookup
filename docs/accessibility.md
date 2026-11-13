@@ -1,6 +1,6 @@
 # Accessibility audit
 
-The web page must meet **WCAG 2.2 level AA**. See [AGENTS.md](../AGENTS.md) for the rules every change must follow.
+The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
 ## Latest audit: 2026-11-13
 

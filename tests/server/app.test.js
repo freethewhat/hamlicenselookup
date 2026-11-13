@@ -216,6 +216,15 @@ test('public files revalidate; vendor files cache', async () => {
   });
 });
 
+test('notes for Claude Code in public/ are not served', async () => {
+  await withApp(fixture, {}, async (base) => {
+    for (const path of ['/CLAUDE.md', '/claude.md', '/js/../CLAUDE.md']) {
+      const res = await fetch(`${base}${path}`);
+      assert.equal(res.status, 404, path);
+    }
+  });
+});
+
 test('GET /api/status is idle with an empty data dir and returns the status file when present', async () => {
   await withApp(null, {}, async (base, dir) => {
     let res = await fetch(`${base}/api/status`);
