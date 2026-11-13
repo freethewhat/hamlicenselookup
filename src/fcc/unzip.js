@@ -27,5 +27,6 @@ export async function readZipEntries(zipPath, names) {
     });
     zip.readEntry();
   });
+  found.close = () => zip.close();
   return found;
 }

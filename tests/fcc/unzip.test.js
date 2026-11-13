@@ -21,6 +21,8 @@ test('readZipEntries returns streams for requested names and omits missing ones'
     assert.equal(await readAll(await map.get('en.dat')()), 'EN|1|x\r\n');
     assert.equal(await readAll(await map.get('COUNTS')()), 'EN 1\r\n');
     assert.equal(map.has('HD.dat'), false);
+    assert.equal(typeof map.close, 'function');
+    map.close();
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
