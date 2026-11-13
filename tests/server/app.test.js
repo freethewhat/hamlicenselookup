@@ -184,3 +184,15 @@ test('retries a failed open even when the file inode is unchanged', async () => 
     assert.equal((await fetch(`${base}/api/meta`)).status, 200);
   });
 });
+
+test('public files revalidate; vendor files cache', async () => {
+  await withApp(fixture, {}, async (base) => {
+    for (const path of ['/', '/js/main.js']) {
+      const res = await fetch(`${base}${path}`);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('cache-control'), /no-cache/);
+    }
+    const leaflet = await fetch(`${base}/vendor/leaflet/leaflet.js`);
+    assert.match(leaflet.headers.get('cache-control'), /max-age=86400/);
+  });
+});

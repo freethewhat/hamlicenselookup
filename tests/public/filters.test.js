@@ -29,8 +29,10 @@ test('first-only on carries since and upgrades', () => {
   assert.deepEqual(f, { firstLicenseSince: '2025-11-13', includeUpgrades: true, includeExpired: false, includeClubs: true });
 });
 
-test('first-only with an empty date means no date filter', () => {
-  const f = filtersFromForm({ firstOnly: true, since: '', includeUpgrades: true, includeExpired: false, includeClubs: false });
-  assert.equal(f.firstLicenseSince, null);
-  assert.equal(f.includeUpgrades, false);
+test('first-only with an empty or invalid date falls back to the default since', () => {
+  for (const since of ['', 'garbage', undefined]) {
+    const f = filtersFromForm({ firstOnly: true, since, includeUpgrades: true, includeExpired: false, includeClubs: false }, new Date('2026-11-13'));
+    assert.equal(f.firstLicenseSince, '2025-11-13');
+    assert.equal(f.includeUpgrades, true);
+  }
 });

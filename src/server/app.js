@@ -141,7 +141,8 @@ export function createApp({ dataDir, now = () => new Date(), recheckMs, rateLimi
     await writeCsv(iterateLicenses(req.db, zips, filters), res);
   });
 
-  app.use(express.static(join(ROOT, 'public'), { maxAge: '1d' }));
+  // HTML/JS/CSS revalidate on every load so a deploy is picked up at once; map data and vendor files cache.
+  app.use(express.static(join(ROOT, 'public'), { maxAge: 0, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
   app.use('/vendor/leaflet', express.static(join(ROOT, 'node_modules', 'leaflet', 'dist'), { maxAge: '1d' }));
   app.use('/geo', express.static(join(dataDir, 'geo'), { maxAge: '1d' }));
 

@@ -14,11 +14,13 @@ export function defaultFilters() {
   return { firstLicenseSince: null, includeUpgrades: false, includeExpired: false, includeClubs: false };
 }
 
-export function filtersFromForm({ firstOnly, since, includeUpgrades, includeExpired, includeClubs }) {
-  const dated = Boolean(firstOnly && since);
+const validDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && !Number.isNaN(Date.parse(s));
+
+// With "first license only" checked, a blank or invalid date falls back to the default (12 months back).
+export function filtersFromForm({ firstOnly, since, includeUpgrades, includeExpired, includeClubs }, today = new Date()) {
   return {
-    firstLicenseSince: dated ? since : null,
-    includeUpgrades: dated ? Boolean(includeUpgrades) : false,
+    firstLicenseSince: firstOnly ? (validDate(since) ? since : defaultSince(today)) : null,
+    includeUpgrades: firstOnly ? Boolean(includeUpgrades) : false,
     includeExpired: Boolean(includeExpired),
     includeClubs: Boolean(includeClubs),
   };
@@ -44,13 +46,16 @@ export function initFilters({ onBack, onNext }) {
   $('next-2').addEventListener('click', onNext);
 
   return {
-    getFilters: () =>
-      filtersFromForm({
+    getFilters() {
+      const f = filtersFromForm({
         firstOnly: firstOnly.checked,
         since: since.value,
         includeUpgrades: upgrades.checked,
         includeExpired: $('f-expired').checked,
         includeClubs: $('f-clubs').checked,
-      }),
+      });
+      if (f.firstLicenseSince) since.value = f.firstLicenseSince;
+      return f;
+    },
   };
 }
