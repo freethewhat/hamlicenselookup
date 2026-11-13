@@ -20,13 +20,13 @@
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.4",
     "leaflet": "1.9.4",
+    "mapshaper": "^0.7.101",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
-    "mapshaper": "^0.7.101",
     "yazl": "^3.3.1"
   }
 }

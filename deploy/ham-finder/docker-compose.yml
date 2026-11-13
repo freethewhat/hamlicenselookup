@@ -1,0 +1,14 @@
+services:
+  app:
+    container_name: ham-finder
+    image: __IMAGE__:${IMAGE_TAG}
+    volumes:
+      - ./data:/data
+    networks:
+      - web
+    restart: unless-stopped
+    mem_limit: 1g
+
+networks:
+  web:
+    external: true

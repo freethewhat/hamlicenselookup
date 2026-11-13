@@ -1,0 +1,9 @@
+[Unit]
+Description=Ham License Finder full data setup (map data and first FCC load)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/apps/ham-finder
+ExecStart=/usr/bin/flock /srv/apps/ham-finder/.update.lock /usr/bin/docker compose run --rm app npm run setup
