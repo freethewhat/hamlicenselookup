@@ -18,11 +18,20 @@ if (process.env.AUTO_UPDATE !== '0') {
   });
 }
 
-process.on('SIGTERM', () => {
-  updater?.kill('SIGTERM');
+// Stops the updater (if running), waiting up to 5 s for it to exit, then closes the server.
+async function shutdown() {
+  if (updater) {
+    const child = updater;
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    child.kill('SIGTERM');
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+  }
   server.close(() => {
     app.locals.handle.close();
     process.exit(0);
   });
   server.closeAllConnections();
-});
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

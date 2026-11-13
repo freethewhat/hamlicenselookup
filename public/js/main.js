@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 export const selection = createSelection();
 
 export function showError(message) {
+  // While an update runs, the progress banner replaces the "no data yet" 503 messages.
+  if (message && dataLoadingNotice({ status: 503, message }, updateBanner.isRunning())) message = '';
   const el = $('banner-error');
   el.textContent = message;
   el.hidden = !message;
@@ -52,7 +54,8 @@ async function onDataReady() {
 }
 
 const updateBanner = initUpdateBanner({ onDataReady });
-await updateBanner.firstPoll;
+// Never let a slow status call hold up the page.
+await Promise.race([updateBanner.firstPoll, new Promise((r) => setTimeout(r, 3000))]);
 loadMeta();
 areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });
 

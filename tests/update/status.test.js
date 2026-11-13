@@ -4,6 +4,8 @@ import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { createStatusWriter, createProgressSink, readStatus } from '../../src/update/status.js';
 
 async function withDir(fn) {
@@ -148,4 +150,42 @@ test('progress sink starts a step on change and only moves progress otherwise', 
     ['step', 'download', 'Downloading daily file (2 of 7)', { total: 10, unit: 'bytes' }],
     ['progress', 5],
   ]);
+});
+
+async function staleRunning(dir) {
+  await writeFile(join(dir, 'update-status.json'), JSON.stringify({
+    state: 'running', updatedAt: '2026-11-13T12:00:00.000Z',
+  }));
+}
+const LATER = new Date('2026-11-13T12:10:00Z');
+
+test('a stale running status with the lock free is interrupted, and the lock is left free', async () => {
+  await withDir(async (dir) => {
+    const { acquireUpdateLock } = await import('../../src/update/run.js');
+    (await acquireUpdateLock(dir)).release();
+    await staleRunning(dir);
+    assert.equal(readStatus(dir, LATER).state, 'interrupted');
+    (await acquireUpdateLock(dir)).release(); // would throw if readStatus kept the lock
+  });
+});
+
+test('a stale running status is still running while another process holds the lock', async () => {
+  await withDir(async (dir) => {
+    const lockUrl = new URL('../../src/update/run.js', import.meta.url).href;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+      const { acquireUpdateLock } = await import(${JSON.stringify(lockUrl)});
+      await acquireUpdateLock(${JSON.stringify(dir)});
+      console.log('ready');
+      setInterval(() => {}, 1000);
+    `], { stdio: ['ignore', 'pipe', 'inherit'] });
+    try {
+      await once(child.stdout, 'data');
+      await staleRunning(dir);
+      assert.equal(readStatus(dir, LATER).state, 'running');
+    } finally {
+      const closed = once(child, 'close');
+      child.kill('SIGKILL');
+      await closed;
+    }
+  });
 });

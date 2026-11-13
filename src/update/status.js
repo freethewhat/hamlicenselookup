@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 
 export const STATUS_FILE = 'update-status.json';
 const INTERRUPTED_AFTER_MS = 120_000;
@@ -97,6 +98,37 @@ export function createProgressSink(status) {
   };
 }
 
+// True when some process holds the update lock. Takes the lock for an instant and releases it
+// at once; never waits. Returns null when the check itself fails.
+function updateLockHeld(dataDir) {
+  const path = join(dataDir, '.update-lock.db');
+  if (!existsSync(path)) return false;
+  let db;
+  try {
+    db = new Database(path, { fileMustExist: true });
+    db.pragma('busy_timeout = 0');
+    db.exec('BEGIN EXCLUSIVE');
+    db.exec('ROLLBACK');
+    return false;
+  } catch (err) {
+    return err.code === 'SQLITE_BUSY' ? true : null;
+  } finally {
+    try {
+      if (db?.open) {
+        if (db.inTransaction) db.exec('ROLLBACK');
+        db.close();
+      }
+    } catch {
+      // nothing more to release
+    }
+  }
+}
+
+/**
+ * Current status. A `running` status is live while the update lock is held, however long since
+ * its last write (long steps write nothing); with no lock holder it is `interrupted`. If the
+ * lock cannot be checked, falls back to the age of the last write.
+ */
 export function readStatus(dataDir, now = new Date()) {
   let s;
   try {
@@ -105,7 +137,9 @@ export function readStatus(dataDir, now = new Date()) {
     return { state: 'idle' };
   }
   if (s.state === 'running' && +now - Date.parse(s.updatedAt) > INTERRUPTED_AFTER_MS) {
-    return { ...s, state: 'interrupted' };
+    // Only a stale file needs the lock probe, so fresh progress never contends with an update.
+    const held = updateLockHeld(dataDir);
+    if (held === false || held === null) return { ...s, state: 'interrupted' };
   }
   return s;
 }

@@ -72,6 +72,22 @@ test('data loading notice only while an update runs and data is missing', () => 
   const err = { status: 503, message: 'Data not loaded yet' };
   assert.equal(dataLoadingNotice(err, true), notice);
   assert.equal(dataLoadingNotice(err, false), null);
-  assert.equal(dataLoadingNotice({ status: 503, message: 'Data is being updated. Try again soon.' }, true), null);
+  assert.equal(dataLoadingNotice({ status: 503, message: 'Data is being updated. Try again soon.' }, true), notice);
+  assert.equal(dataLoadingNotice({ status: 503, message: 'Data is being updated. Try again soon.' }, false), null);
   assert.equal(dataLoadingNotice({ status: 500, message: 'Data not loaded yet' }, true), null);
+});
+
+test('small downloads omit the MB part; unknown total omits the percent', () => {
+  const small = statusView({ state: 'running', stepLabel: 'Downloading', percent: 0, done: 0, total: 35_615, unit: 'bytes' }, NOW);
+  assert.equal(small.text, 'Updating license data: Downloading, 0%');
+  const unknown = statusView({ state: 'running', stepLabel: 'Downloading', percent: 0, done: 0, total: null, unit: 'bytes' }, NOW);
+  assert.equal(unknown.text, 'Updating license data: Downloading');
+});
+
+test('done message is timed from the client when doneSince is given', () => {
+  const done = { state: 'done', updatedAt: '2026-11-13T11:00:00Z' }; // server stamp is old
+  const seenAt = +NOW - 4000;
+  assert.equal(statusView(done, NOW, '2026-11-08', seenAt).visible, true);
+  assert.equal(statusView(done, NOW, '2026-11-08', +NOW - 10_001).visible, false);
+  assert.equal(statusView(done, NOW, '2026-11-08').visible, false); // fresh page load, stale done
 });

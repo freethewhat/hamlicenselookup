@@ -24,16 +24,19 @@ export function initUpdateBanner({ onDataReady }) {
   let state = 'idle';
   let dataAsOf = null;
   let timer = null;
+  let doneSince = null; // client time the running -> done edge was seen
 
   async function render(status) {
     // On the running -> done edge the new data is live: tell the page, and read the date for the text.
     const finished = state === 'running' && status.state === 'done';
     if (finished) await new Promise((r) => setTimeout(r, HANDLE_RECHECK_MS));
-    let view = statusView(status, new Date(), dataAsOf);
+    if (finished) doneSince = Date.now();
+    else if (status.state !== 'done') doneSince = null;
+    let view = statusView(status, new Date(), dataAsOf, doneSince);
     if (status.state === 'done' && view.visible && (finished || dataAsOf === null)) {
       try {
         dataAsOf = (await getMeta()).dataAsOf;
-        view = statusView(status, new Date(), dataAsOf);
+        view = statusView(status, new Date(), dataAsOf, doneSince);
       } catch {
         // meta not available; the text falls back to "Data updated"
       }
