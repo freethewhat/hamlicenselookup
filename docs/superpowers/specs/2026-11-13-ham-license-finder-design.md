@@ -194,13 +194,17 @@ cleanly in Excel and Google Sheets.
   records is well within SQLite's range. Index ZIP, state, status, and
   dates.
 - Target server: a DigitalOcean Droplet, 2 GB RAM, 50 GB disk,
-  Ubuntu LTS, with the app run as a systemd service. Parse the FCC
-  files as a stream, not all in memory. Details in section 11b.
+  Ubuntu LTS. Parse the FCC files as a stream, not all in memory.
+- **Docker everywhere (decided 2026-11-13):** the app ships as one
+  Docker image. The same image runs on developers' computers and on the
+  server, started with Docker Compose. Details in sections 11b and 11c.
 
 ## 11a. Data updates
 
 **Decided:** the update schedule runs **on the same VPS** as the app,
-using systemd timers. No extra hosting.
+using host systemd timers that run the update command inside the app's
+container (`docker compose run --rm app npm run update:weekly` /
+`update:daily`). No extra hosting.
 
 - **Weekly (Sunday night, after the FCC posts the file):** download
   `l_amat.zip`, build a **new** database file beside the live one, run
@@ -222,15 +226,20 @@ using systemd timers. No extra hosting.
 
 - **CI:** GitHub Actions runs lint and tests on every pull request and
   push.
+- **CI:** also builds the Docker image, so a broken image fails the
+  check.
 - **CD:** when a change is merged to `main` and the tests pass, GitHub
-  Actions copies the new code to the VPS over SSH and restarts the app.
-  The SSH key and server address live in GitHub repository secrets. Use
-  a dedicated deploy user on the server with only the rights it needs.
-- The database is **not** part of the deploy. A deploy must not wipe or
+  Actions builds the image, pushes it to the GitHub Container Registry
+  (`ghcr.io`), then connects to the VPS over SSH and runs a deploy
+  script there that pulls the new image and restarts the container.
+  The SSH key and server address live in GitHub repository secrets. The
+  deploy key may only run that one script (SSH forced command).
+- The database is **not** part of the deploy. Data lives in a folder on
+  the host mounted into the container. A deploy must not wipe or
   rebuild the data.
 - First-time server setup is a written, repeatable script or checklist
-  (install Node.js, create user, systemd service and timers, firewall,
-  HTTPS with Let's Encrypt).
+  (install Docker, firewall, swap, Caddy container, app folder, systemd
+  timers, HTTPS via Caddy).
 
 **Hosting provider (decided):** a **DigitalOcean** Basic Droplet with
 **2 GB RAM** (about $12/month, 50 GB disk, Ubuntu LTS), in a US region
@@ -243,15 +252,34 @@ reviews are weaker.)
 **Many apps on one server (decided):** the owner wants to host more apps
 on this Droplet later. So:
 
-- **Caddy** runs in front as the reverse proxy (it sends each web
-  address to the right app) and gets HTTPS certificates automatically.
-- Each app runs as its **own systemd service, own Linux user, own port,
-  and own folder** (for example `/srv/ham-finder`). This app must not
-  assume it owns the whole server.
+- **Caddy** runs in its own container in front of all apps as the
+  reverse proxy (it sends each web address to the right app) and gets
+  HTTPS certificates automatically. It is the only container that
+  publishes ports (80 and 443).
+- All app containers join one shared Docker network (`web`). Caddy
+  reaches each app by container name; apps publish no ports on the
+  server.
+- Each app has its **own folder with its own Compose file and data**
+  (for example `/srv/apps/ham-finder/`), plus one Caddy site file
+  (`/srv/apps/caddy/sites/<app>.caddy`). This app must not assume it
+  owns the whole server.
 - Each app gets its own subdomain (for example `hams.<club-domain>`).
   The club's domain and DNS are set up by the owner.
-- The setup script installs Caddy and shared tools once, and this app's
-  pieces separately, so a second app can be added the same way.
+- The setup script installs Docker and the Caddy container once, and
+  this app's pieces separately, so a second app can be added the same
+  way: new folder, new Compose file, new Caddy site file.
+
+## 11c. Running locally
+
+**Decided:** developers run the app with Docker.
+
+- `docker compose up` starts the app at `http://localhost:3100`.
+- A one-time setup command builds the map data and loads the FCC data
+  into a local `data/` folder.
+- A `LOAD_STATES` setting (for example `LOAD_STATES=MT`) loads only
+  some states, so a first local load is quick. The server leaves it
+  empty and loads the whole US.
+- Tests can also run without Docker (`npm test`) for speed.
 
 ## 12. Load and limits
 

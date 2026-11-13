@@ -4,9 +4,9 @@
 
 **Goal:** A public web app that searches FCC amateur licenses across many ZIP codes or counties at once (by map or form), filters to first-time licensees, and exports a CSV.
 
-**Architecture:** One Node.js (Express) service serves a no-build static front end and a JSON/CSV API. License data lives in a local SQLite file (`licenses.db`) rebuilt weekly from the FCC bulk file and patched daily; geography (ZIP→county, per-state boundary GeoJSON) lives in `geo.db` plus static files, built once from Census and GeoNames data. systemd timers run the updates on the same Droplet; GitHub Actions tests and deploys over SSH; Caddy fronts it with HTTPS.
+**Architecture:** One Node.js (Express) service serves a no-build static front end and a JSON/CSV API. License data lives in a local SQLite file (`licenses.db`) rebuilt weekly from the FCC bulk file and patched daily; geography (ZIP→county, per-state boundary GeoJSON) lives in `geo.db` plus static files, built once from Census and GeoNames data. The app ships as one Docker image, run with Docker Compose both locally and on the Droplet. On the server, a shared Caddy container fronts all apps with HTTPS over a shared `web` network; host systemd timers run the updates inside the app container; GitHub Actions tests, builds and pushes the image to GHCR, then triggers a pull-and-restart over SSH.
 
-**Tech Stack:** Node.js ≥ 22 (server: Node 24 LTS), Express 5, better-sqlite3, yauzl (unzip), mapshaper (geo build), express-rate-limit, Leaflet 1.9.4 + OpenStreetMap tiles, `node:test`, ESLint 9, yazl (test fixtures only), GitHub Actions, systemd, Caddy, Ubuntu LTS on DigitalOcean.
+**Tech Stack:** Node.js 24 LTS (`node:24-bookworm-slim` image; local non-Docker dev ≥ 22), Express 5, better-sqlite3, yauzl (unzip), mapshaper (geo build), express-rate-limit, Leaflet 1.9.4 + OpenStreetMap tiles, `node:test`, ESLint 9, yazl (test fixtures only), Docker + Docker Compose v2, GitHub Actions + GHCR, Caddy 2 (container), systemd timers, Ubuntu LTS on DigitalOcean.
 
 **Spec:** `docs/superpowers/specs/2026-11-13-ham-license-finder-design.md`
 
@@ -20,8 +20,9 @@
 - "Data as of: <date>" always shown; warning when data is more than 10 days old.
 - Parse FCC files as streams; never hold a whole `.dat` file in memory. Target box: 2 GB RAM.
 - A failed weekly load must leave the previous `licenses.db` live. A deploy must never touch `DATA_DIR`.
-- App runs as its own user, own port (`PORT`, default `3100`), own folder (`/srv/ham-finder`), behind Caddy. It must not assume it owns the server.
-- Config by env: `PORT` (default `3100`), `DATA_DIR` (default `./data`).
+- Docker everywhere: one image, run by Docker Compose locally and on the server. On the server the app lives in `/srv/apps/ham-finder/`, joins the shared `web` network, publishes no host ports, and is reached by Caddy as `ham-finder:3100`. Only the Caddy container publishes 80/443. The app must not assume it owns the server.
+- Config by env: `PORT` (default `3100`), `HOST` (default `127.0.0.1`; `0.0.0.0` in the image), `DATA_DIR` (default `./data`; `/data` in the image), `LOAD_STATES` (comma list of state abbrs, empty = all; for quick local loads).
+- Container runs as the non-root `node` user (uid 1000); the host data folder is owned by uid 1000.
 - Test fixtures use made-up people only (e.g. `TESTER, ALPHA`); never commit real FCC records.
 - Call sign stays a clean, uppercase column (future membership cross-check, spec §13).
 
@@ -63,9 +64,10 @@ public/index.html, public/css/app.css
 public/js/main.js, api.js, selection.js, step-areas.js, map-view.js,
           form-view.js, step-filters.js, step-results.js
 tests/  (mirrors src/; tests/helpers/fcc-fixture.js, tests/helpers/geo-fixture.js)
-deploy/ setup-server.sh, setup-app.sh, ham-finder.service,
-        ham-finder-weekly.{service,timer}, ham-finder-daily.{service,timer},
-        ham-finder.caddy, sudoers-ham-finder, README.md
+Dockerfile, .dockerignore, docker-compose.yml (local dev), .env.example
+deploy/ setup-server.sh, setup-app.sh, caddy/docker-compose.yml, caddy/Caddyfile,
+        ham-finder/docker-compose.yml, ham-finder/deploy.sh, ham-finder.caddy,
+        ham-finder-weekly.{service,timer}, ham-finder-daily.{service,timer}, README.md
 .github/workflows/ci-deploy.yml
 docs/verification.md
 ```
@@ -103,7 +105,7 @@ Field indices (0-based, verified against `l_am_tue.zip` on 2026-11-13):
 | AM | 1 usid, 4 call, 5 class, 8 trustee call, 15 previous call, 16 previous class |
 | HS | 1 usid, 3 call, 4 date, 5 code |
 
-- [ ] **Step 1: Scaffold.** `git branch -m master main`. Create `package.json` (`"type":"module"`, `"engines":{"node":">=22"}`, scripts: `test: node --test`, `lint: eslint .`, `start: node src/server/index.js`, `update:weekly: node scripts/update.js weekly`, `update:daily: node scripts/update.js daily`, `build:geo: node --max-old-space-size=3072 scripts/build-geo.js`). Install deps: `express better-sqlite3 yauzl express-rate-limit leaflet@1.9.4`; dev: `eslint @eslint/js globals yazl mapshaper`. ESLint flat config: recommended rules, node globals for `src/ scripts/ tests/`, browser globals for `public/`. README: one paragraph + `npm test`, `npm start`.
+- [ ] **Step 1: Scaffold.** `git branch -m master main`. Create `package.json` (`"type":"module"`, `"engines":{"node":">=22"}`, scripts: `test: node --test`, `lint: eslint .`, `start: node src/server/index.js`, `update:weekly: node scripts/update.js weekly`, `update:daily: node scripts/update.js daily`, `build:geo: node --max-old-space-size=3072 scripts/build-geo.js`, `setup: npm run build:geo && npm run update:weekly`). Install deps: `express better-sqlite3 yauzl express-rate-limit leaflet@1.9.4`; dev: `eslint @eslint/js globals yazl mapshaper`. ESLint flat config: recommended rules, node globals for `src/ scripts/ tests/`, browser globals for `public/`. README: one paragraph + `npm test`, `npm start`.
 
 - [ ] **Step 2: Write failing tests** in `tests/fcc/parse.test.js`:
 
@@ -200,7 +202,7 @@ test('empty history', ...)             // all three null
 - Consumes: Task 1 parsers, `readZipEntries`, `classifyLicense`
 - Produces:
   - `SCHEMA_SQL: string`, `INDEX_SQL: string`
-  - `loadWeekly(zipPath: string, outDbPath: string): Promise<{licenseCount: number, fileDate: string}>`
+  - `loadWeekly(zipPath: string, outDbPath: string, opts?: {states?: string[]}): Promise<{licenseCount: number, fileDate: string}>` — when `states` is non-empty, only EN rows whose `state` is in the list are kept (licenses without an EN row are dropped by the join). Meta key `load_states` stores the list (comma-joined, `''` = all).
   - `parseCountsDate(text: string): string` — `'File Creation Date: Sun Nov  8 09:08:58 EST 2026'` → `'2026-11-08'`
   - `reclassify(db, usids?: number[]): void` — recompute classify columns for the given usids (all when omitted), then the FRN pass for affected FRNs. Exported for Task 4.
 
@@ -233,7 +235,7 @@ WHERE first_license_date IS NOT NULL AND frn <> '' AND EXISTS (
     AND o.earliest_event_date < licenses.first_license_date);
 ```
 
-- [ ] **Step 1: Write failing test** building a fixture zip with 4 made-up licenses: A first license (LIISS 2026-05-01), B renewal (LIISS 2016-03-02, LIREN 2026-03-01), C upgrade (prevClass T, class G, LIMOD 2026-06-01), D club (applicant `B`, trustee `K7AAA`), plus E sharing A's FRN with LIISS 2019-01-01 and `counts` text above. Assert: `licenseCount === 5`; `fileDate === '2026-11-08'`; A `first_license_date` is `null` because of E (then a second fixture without E gives `'2026-05-01'`); C `upgrade_date === '2026-06-01'`; D `applicant_type === 'B'`; `zip5` set; meta `data_as_of === '2026-11-08'`.
+- [ ] **Step 1: Write failing test** building a fixture zip with 4 made-up licenses: A first license (LIISS 2026-05-01), B renewal (LIISS 2016-03-02, LIREN 2026-03-01), C upgrade (prevClass T, class G, LIMOD 2026-06-01), D club (applicant `B`, trustee `K7AAA`), plus E sharing A's FRN with LIISS 2019-01-01 and `counts` text above. Assert: `licenseCount === 5`; `fileDate === '2026-11-08'`; A `first_license_date` is `null` because of E (then a second fixture without E gives `'2026-05-01'`); C `upgrade_date === '2026-06-01'`; D `applicant_type === 'B'`; `zip5` set; meta `data_as_of === '2026-11-08'`. Plus: `loadWeekly(zip, db, {states:['MT']})` with one fixture row in `OR` keeps only the MT rows.
 - [ ] **Step 2: Run** `node --test tests/db/load-weekly.test.js` — Expected: FAIL.
 - [ ] **Step 3: Implement** `schema.js`, `loadWeekly`, `parseCountsDate`, `reclassify`.
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -251,7 +253,7 @@ WHERE first_license_date IS NOT NULL AND frn <> '' AND EXISTS (
 - Consumes: Task 1 parsers, `parseCountsDate`, `reclassify` (Task 3)
 - Produces: `applyDaily(zipPath: string, dbPath: string): Promise<{changed: number, fileDate: string, skipped: boolean}>`
 
-Behavior: a daily file holds the full record set for each changed usid. In one transaction: for every usid seen in the daily HD/EN/AM/HS, delete its `licenses` and `history` rows, insert the new ones (same join rule as Task 3), then `reclassify(db, usids)`. Skip (return `skipped: true`, change nothing) when `fileDate <= meta.daily_applied_through`. On success set `daily_applied_through` and `data_as_of` to `fileDate`.
+Behavior: a daily file holds the full record set for each changed usid. Respect meta `load_states`: when set, drop incoming EN rows outside those states (and delete any existing row for that usid, since the license moved out). In one transaction: for every usid seen in the daily HD/EN/AM/HS, delete its `licenses` and `history` rows, insert the new ones (same join rule as Task 3), then `reclassify(db, usids)`. Skip (return `skipped: true`, change nothing) when `fileDate <= meta.daily_applied_through`. On success set `daily_applied_through` and `data_as_of` to `fileDate`.
 
 - [ ] **Step 1: Write failing tests:** (a) weekly fixture, then a daily fixture that changes B's address and adds new license F (LIISS on the daily date) → B's street changed, F present with `first_license_date` set, `license_count` meta updated; (b) applying the same daily file twice → second call `skipped: true`, row counts unchanged; (c) a daily file dated before `weekly_file_date` → skipped.
 - [ ] **Step 2: Run** — Expected: FAIL.
@@ -276,7 +278,8 @@ Behavior: a daily file holds the full record set for each changed usid. In one t
 
 Weekly: download to `dataDir/tmp/l_amat.zip` (stream to disk; send `User-Agent: ham-license-finder`); `loadWeekly` into `dataDir/tmp/licenses-new.db`; if `dataDir/licenses.db` exists and new count `< minRatio × old license_count`, throw `Error('License count dropped from X to Y; keeping old data')`; else `fs.renameSync` new → `dataDir/licenses.db` (remove stale `-wal`/`-shm` of the new file first by checkpointing and closing it). Always delete `dataDir/tmp` contents in `finally`.
 Daily: download all 7 daily zips to `tmp/`; read each `counts` date; apply in ascending date order via `applyDaily` (which skips old ones). A 404 for a day is skipped, other HTTP errors throw.
-CLI `scripts/update.js weekly|daily`: `DATA_DIR` from env (default `./data`), logs one line per outcome to stdout, `process.exit(1)` with the error message on stderr on failure (systemd → journald).
+`runWeekly` also accepts `states?: string[]` and passes it to `loadWeekly`; the count check is skipped when the old db's `load_states` differs from the new one.
+CLI `scripts/update.js weekly|daily`: `DATA_DIR` from env (default `./data`), `LOAD_STATES` from env (split on `,`, trimmed, uppercased, empty = all), logs one line per outcome to stdout, `process.exit(1)` with the error message on stderr on failure (systemd → journald).
 
 - [ ] **Step 1: Write failing tests** with a fake `fetchImpl` serving fixture zips: (a) first weekly creates `licenses.db`; (b) second weekly with fewer than 95% of the rows throws and the old db (old `license_count`) stays; (c) `tmp/` is empty after both success and failure; (d) `runDaily` applies two newer daily files in date order and skips one older than the weekly.
 - [ ] **Step 2: Run** — Expected: FAIL.
@@ -355,7 +358,7 @@ CSV columns, in this order: Call Sign, First Name, Middle Initial, Last Name, Su
     - `POST /api/export` same body → `text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="hams-<YYYY-MM-DD>.csv"`, streamed
     - static: `/` → `public/`, `/vendor/leaflet/` → `node_modules/leaflet/dist/`, `/geo/` → `DATA_DIR/geo/` (`maxAge: '1d'`)
   - Errors: no license db → `503 {"error":"Data not loaded yet"}`; invalid entries or zero ZIPs → `400 {"error": "...", "invalid": [...]}`; more than 5,000 resolved ZIPs → `400 {"error":"Too many ZIP codes (max 5000)"}`. `express-rate-limit` on `/api`: 120 requests / minute / IP; `app.set('trust proxy', 1)`; JSON body limit `1mb`.
-  - `index.js`: `createApp({dataDir: process.env.DATA_DIR ?? './data'}).listen(Number(process.env.PORT ?? 3100), '127.0.0.1')`.
+  - `index.js`: `createApp({dataDir: process.env.DATA_DIR ?? './data'}).listen(Number(process.env.PORT ?? 3100), process.env.HOST ?? '127.0.0.1')`; on `SIGTERM` close the server and the db handle, then exit 0 (so `docker stop` is quick and clean).
 
 - [ ] **Step 1: Write failing tests** (start the app on port 0, use `fetch`):
   - `returns 503 when no license db`: empty data dir → `/api/search` 503 with that exact error; `/api/health` 200.
@@ -391,7 +394,7 @@ Step 1 layout (match mockup B): state picker (multi, default none; map centers o
 - [ ] **Step 2: Run** `node --test tests/public/selection.test.js` — Expected: FAIL.
 - [ ] **Step 3: Implement** the files above. ES modules, no build step, no framework.
 - [ ] **Step 4: Run** `npm test && npm run lint` — Expected: PASS.
-- [ ] **Step 5: Manual check** (use the `run` skill or a browser): with real `geo.db` and a loaded `licenses.db` (or fixture), `npm start`, open `http://127.0.0.1:3100`, pick MT, click three ZIPs on the map, switch to Form and see the same three; switch to By county, pick Missoula + Ravalli, see the ZIP count update. Expected: all as described, no console errors.
+- [ ] **Step 5: Manual check** (use the `run` skill or a browser): with real `geo.db` and a loaded `licenses.db` (`LOAD_STATES=MT npm run setup`, or a fixture), `npm start`, open `http://127.0.0.1:3100`, pick MT, click three ZIPs on the map, switch to Form and see the same three; switch to By county, pick Missoula + Ravalli, see the ZIP count update. Expected: all as described, no console errors.
 - [ ] **Step 6: Commit** `git commit -m "feat: step 1 area picker with map and form"` (after `git add`).
 
 ---
@@ -437,44 +440,62 @@ Step 3: "N hams found" (from `search`), preview table of the first 100 rows (Cal
 
 ---
 
-### Task 11: Server setup, systemd, Caddy, and CI/CD
+### Task 11: Docker image, local Compose, server setup, and CI/CD
 
 **Files:**
-- Create: `deploy/setup-server.sh`, `deploy/setup-app.sh`, `deploy/ham-finder.service`, `deploy/ham-finder-weekly.service`, `deploy/ham-finder-weekly.timer`, `deploy/ham-finder-daily.service`, `deploy/ham-finder-daily.timer`, `deploy/ham-finder.caddy`, `deploy/sudoers-ham-finder`, `deploy/README.md`, `.github/workflows/ci-deploy.yml`
-- Modify: `README.md` (link to `deploy/README.md`)
+- Create: `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, `deploy/setup-server.sh`, `deploy/setup-app.sh`, `deploy/caddy/docker-compose.yml`, `deploy/caddy/Caddyfile`, `deploy/ham-finder/docker-compose.yml`, `deploy/ham-finder/deploy.sh`, `deploy/ham-finder.caddy`, `deploy/ham-finder-weekly.service`, `deploy/ham-finder-weekly.timer`, `deploy/ham-finder-daily.service`, `deploy/ham-finder-daily.timer`, `deploy/README.md`, `.github/workflows/ci-deploy.yml`
+- Modify: `README.md` (local quick start + link to `deploy/README.md`)
 
 **Interfaces:**
-- Consumes: npm scripts `start`, `update:weekly`, `update:daily`, `build:geo`; `GET /api/health`
-- Produces: the server layout below, used by the workflow.
+- Consumes: npm scripts `start`, `setup`, `build:geo`, `update:weekly`, `update:daily`; env `PORT`, `HOST`, `DATA_DIR`, `LOAD_STATES`; `GET /api/health`
+- Produces: image `ghcr.io/<owner>/<repo>:latest` and `:<git-sha>`; the server layout below.
 
-Server layout:
-- `/srv/ham-finder/app` — code (owner `deploy`, group `ham-finder`, mode 750)
-- `/srv/ham-finder/data` — `DATA_DIR` (owner `ham-finder`, mode 750)
-- Service user `ham-finder` (no login shell); deploy user `deploy` (SSH key only, member of group `ham-finder`)
+**Image (`Dockerfile`):** multi-stage. Build stage `node:24-bookworm-slim` + `python3 make g++` (for better-sqlite3 if no prebuild), `npm ci --omit=dev`. Runtime stage `node:24-bookworm-slim`: copy `node_modules`, `src/`, `scripts/`, `public/`, `package*.json`; `ENV NODE_ENV=production PORT=3100 HOST=0.0.0.0 DATA_DIR=/data`; `USER node`; `EXPOSE 3100`; `HEALTHCHECK CMD node -e "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`; `CMD ["node","src/server/index.js"]`. mapshaper is needed by `build:geo` at runtime, so move it from devDependencies to dependencies. `.dockerignore`: `.git node_modules data .superpowers docs tests .github`.
 
-`setup-server.sh` (shared, run once per Droplet, idempotent): apt update/upgrade; install `build-essential sqlite3 unzip ufw unattended-upgrades`; Node.js 24 via NodeSource; Caddy from the official apt repo; `/etc/caddy/Caddyfile` containing `import /etc/caddy/sites/*.caddy`; `/etc/caddy/sites/`; ufw allow OpenSSH, 80, 443, enable; 2 GB swap file (for the geo build); create `deploy` user with `~/.ssh/authorized_keys` from argument `$1` (public key).
-`setup-app.sh <domain>` (per app, idempotent): create `ham-finder` user and folders; add `deploy` to group; install the systemd units and timers, `systemctl enable --now` the timers and the service; template `ham-finder.caddy` with `<domain>` into `/etc/caddy/sites/`; `systemctl reload caddy`; install `sudoers-ham-finder` to `/etc/sudoers.d/` after `visudo -cf`.
-`ham-finder.service`: `User=ham-finder`, `WorkingDirectory=/srv/ham-finder/app`, `Environment=PORT=3100 DATA_DIR=/srv/ham-finder/data NODE_ENV=production`, `ExecStart=/usr/bin/node src/server/index.js`, `Restart=on-failure`, hardening: `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=/srv/ham-finder/data`, `PrivateTmp=yes`.
-Weekly/daily services: `Type=oneshot`, same user/env/paths, `ExecStart=/usr/bin/npm run update:weekly` (resp. `update:daily`).
-Timers: weekly `OnCalendar=Sun *-*-* 20:00:00 America/Denver`; daily `OnCalendar=Mon..Sat *-*-* 08:00:00 America/Denver`; both `Persistent=true`.
-`ham-finder.caddy`: `<domain> { encode gzip; reverse_proxy 127.0.0.1:3100 }`.
-`sudoers-ham-finder`: `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart ham-finder`.
+**Local (`docker-compose.yml`):** service `app`, `build: .`, `ports: ["127.0.0.1:3100:3100"]`, `volumes: ["./data:/data"]`, `env_file: .env` (optional: `required: false`), `restart: unless-stopped`. `.env.example`: `LOAD_STATES=MT`. README quick start:
 
-`.github/workflows/ci-deploy.yml`: on `push` (all branches) and `pull_request`. Job `test`: ubuntu-latest, Node 24, `npm ci`, `npm run lint`, `npm test`. Job `deploy`: `needs: test`, `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`, `concurrency: deploy`; write `secrets.DEPLOY_SSH_KEY` and `secrets.DEPLOY_KNOWN_HOSTS` to `~/.ssh`; `rsync -az --delete --exclude .git --exclude node_modules --exclude data --exclude .superpowers ./ $DEPLOY_USER@$DEPLOY_HOST:/srv/ham-finder/app/`; then `ssh … 'cd /srv/ham-finder/app && npm ci --omit=dev && sudo systemctl restart ham-finder && sleep 3 && curl -fsS http://127.0.0.1:3100/api/health'`. Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`.
+```bash
+cp .env.example .env
+docker compose build
+docker compose run --rm app npm run setup   # map data + FCC load (MT only per .env)
+docker compose up                            # http://localhost:3100
+```
 
-`deploy/README.md` — the owner's checklist, in order:
+Note in README: on Linux, create `data/` first and `chown 1000:1000 data` if your uid is not 1000.
+
+**Server layout:**
+- `/srv/apps/caddy/` — `docker-compose.yml` (image `caddy:2`, ports `80:80`, `443:443`, `443:443/udp`, volumes `./Caddyfile:/etc/caddy/Caddyfile:ro`, `./sites:/etc/caddy/sites:ro`, `caddy_data:/data`, `caddy_config:/config`, network `web` external, `restart: unless-stopped`), `Caddyfile` = `import /etc/caddy/sites/*.caddy`, `sites/`.
+- `/srv/apps/ham-finder/` — `docker-compose.yml` (service `app`, `container_name: ham-finder`, `image: ghcr.io/<owner>/<repo>:latest`, volume `./data:/data`, network `web` external, `restart: unless-stopped`, `mem_limit: 1g`, no `ports`), `deploy.sh`, `data/` (owner 1000:1000).
+- `/srv/apps/caddy/sites/ham-finder.caddy` = `<domain> { encode gzip; reverse_proxy ham-finder:3100 }`.
+
+**`setup-server.sh <deploy-public-key>`** (shared, once per Droplet, idempotent, run as root): apt update/upgrade; install `ufw unattended-upgrades`; Docker Engine + Compose plugin from Docker's official apt repo; `docker network create web` if missing; 2 GB swap file; ufw allow OpenSSH, 80/tcp, 443/tcp, 443/udp, enable (note: Docker-published ports bypass ufw, which is fine because only Caddy publishes); create `/srv/apps/caddy` from `deploy/caddy/`, `docker compose up -d`; create user `deploy` (no password, no sudo, not in the `docker` group) whose `authorized_keys` line is `command="/srv/apps/bin/deploy-dispatch",no-port-forwarding,no-agent-forwarding,no-pty <key>`; `/srv/apps/bin/deploy-dispatch` (root-owned) reads `$SSH_ORIGINAL_COMMAND`, accepts only `deploy <app>` where `<app>` matches `^[a-z0-9-]+$` and `/srv/apps/<app>/deploy.sh` exists, then runs it via `sudo` (sudoers: `deploy ALL=(root) NOPASSWD: /srv/apps/*/deploy.sh`, validated with `visudo -cf`).
+**`setup-app.sh <domain> <image>`** (per app, idempotent, run as root): create `/srv/apps/ham-finder/{data}` (`chown 1000:1000 data`); write its `docker-compose.yml` with `<image>`; install `deploy.sh` (root-owned, 755); write `sites/ham-finder.caddy` with `<domain>`; `docker compose -f /srv/apps/caddy/docker-compose.yml exec caddy caddy reload --config /etc/caddy/Caddyfile`; install the four systemd units to `/etc/systemd/system/`, `systemctl daemon-reload`, `systemctl enable --now ham-finder-weekly.timer ham-finder-daily.timer`.
+**`deploy.sh`:** `cd /srv/apps/ham-finder && docker compose pull && docker compose up -d && sleep 5 && docker compose exec -T app node -e "<same health fetch as HEALTHCHECK>"`; exit non-zero if the health check fails.
+**Timers:** `ham-finder-weekly.service` / `-daily.service`: `Type=oneshot`, `WorkingDirectory=/srv/apps/ham-finder`, `ExecStart=/usr/bin/docker compose run --rm app npm run update:weekly` (resp. `update:daily`). Timers: weekly `OnCalendar=Sun *-*-* 20:00:00 America/Denver`; daily `OnCalendar=Mon..Sat *-*-* 08:00:00 America/Denver`; both `Persistent=true`. Output lands in journald.
+
+**`.github/workflows/ci-deploy.yml`:** on `push` (all branches) and `pull_request`. `permissions: contents: read, packages: write`.
+- Job `test`: ubuntu-latest, Node 24, `npm ci`, `npm run lint`, `npm test`, then `docker build .` (no push) so a broken image fails CI.
+- Job `deploy`: `needs: test`, `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`, `concurrency: deploy`; `docker/login-action` to `ghcr.io` with `GITHUB_TOKEN`; `docker/build-push-action` with tags `ghcr.io/${{ github.repository }}:latest` and `:${{ github.sha }}` (repository name lowercased); write `secrets.DEPLOY_SSH_KEY` and `secrets.DEPLOY_KNOWN_HOSTS` to `~/.ssh`; `ssh deploy@${{ secrets.DEPLOY_HOST }} deploy ham-finder`.
+- Secrets: `DEPLOY_HOST`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`.
+- GHCR access from the server: make the package **public** after the first push (the code holds no secrets; my call). If the club wants it private, run `docker login ghcr.io` on the server once with a read-only (`read:packages`) token instead.
+
+**`deploy/README.md`** — the owner's checklist, in order:
 1. Create a GitHub repo and push `main`.
 2. Create a DigitalOcean Basic Droplet, 2 GB RAM, Ubuntu LTS, region SFO3, with your SSH key.
 3. Point `hams.<club-domain>` (A record) at the Droplet's IP.
 4. Make a deploy key pair locally: `ssh-keygen -t ed25519 -f ham-finder-deploy -N ''`.
-5. On the Droplet as root: `bash setup-server.sh "$(cat ham-finder-deploy.pub)"` then `bash setup-app.sh hams.<club-domain>`.
-6. Add GitHub secrets: `DEPLOY_HOST` (IP), `DEPLOY_USER` (`deploy`), `DEPLOY_SSH_KEY` (private key), `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan <IP>`).
-7. Push to `main` (or re-run the workflow) to deploy the code.
-8. First data load on the Droplet: `sudo -u ham-finder bash -c 'cd /srv/ham-finder/app && DATA_DIR=/srv/ham-finder/data npm run build:geo && DATA_DIR=/srv/ham-finder/data npm run update:weekly'`.
-9. Check: open `https://hams.<club-domain>`; `systemctl list-timers 'ham-finder*'`; logs with `journalctl -u ham-finder-weekly`.
-10. Adding another app later: run your own `setup-app.sh`-style script with a new user, port, folder, and `/etc/caddy/sites/<app>.caddy`.
+5. Copy `deploy/` to the Droplet. As root: `bash setup-server.sh "$(cat ham-finder-deploy.pub)"`.
+6. Add GitHub secrets: `DEPLOY_HOST` (IP), `DEPLOY_SSH_KEY` (private key), `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan <IP>`).
+7. Push to `main`. The first deploy job builds and pushes the image (the SSH step fails until step 9; that is expected). In GitHub → Packages, set the image to public.
+8. As root: `bash setup-app.sh hams.<club-domain> ghcr.io/<owner>/<repo>:latest`.
+9. Re-run the workflow, or `ssh deploy@<IP> deploy ham-finder`. Expected: health check passes.
+10. First data load: `cd /srv/apps/ham-finder && docker compose run --rm app npm run setup` (whole US; takes a while).
+11. Check: open `https://hams.<club-domain>`; `systemctl list-timers 'ham-finder*'`; logs with `journalctl -u ham-finder-weekly` and `docker compose logs app`.
+12. Adding another app later: new folder `/srv/apps/<app>/` with its own Compose file on the `web` network, a `deploy.sh`, and `/srv/apps/caddy/sites/<app>.caddy`; reload Caddy.
 
-- [ ] **Step 1: Write the files above.**
-- [ ] **Step 2: Validate locally:** `bash -n deploy/*.sh` (no output); `systemd-analyze verify deploy/*.service deploy/*.timer` (no errors except missing-user/path warnings); `caddy fmt deploy/ham-finder.caddy` if Caddy is installed; `npx --yes @action-validator/cli .github/workflows/ci-deploy.yml` or push to a branch and confirm the `test` job passes and `deploy` is skipped.
-- [ ] **Step 3: Commit** `git add deploy .github README.md && git commit -m "ci: server setup, systemd timers, Caddy, and GitHub Actions deploy"`
-- [ ] **Step 4: Hand off** to the owner with `deploy/README.md` steps 1–9 (they create the GitHub repo, Droplet, DNS, and secrets).
+- [ ] **Step 1: Write the image and local Compose files.** Move `mapshaper` to dependencies.
+- [ ] **Step 2: Verify locally:** `docker compose build` succeeds; `cp .env.example .env && docker compose run --rm app npm run setup` loads MT; `docker compose up -d` then `curl -fsS http://127.0.0.1:3100/api/health` → `{"ok":true}`; `docker compose ps` shows `healthy`; `docker compose down`. Expected: all succeed.
+- [ ] **Step 3: Write the `deploy/` files and the workflow.**
+- [ ] **Step 4: Validate:** `bash -n deploy/*.sh deploy/ham-finder/deploy.sh` (no output); `systemd-analyze verify deploy/*.service deploy/*.timer` (no errors besides missing-path warnings); `docker compose -f deploy/caddy/docker-compose.yml config -q` and the same for `deploy/ham-finder/docker-compose.yml` (after `docker network create web`); `docker run --rm -v $PWD/deploy/ham-finder.caddy:/c caddy:2 caddy adapt --config /c --adapter caddyfile` with a sample domain substituted. Push to a branch and confirm the `test` job passes and `deploy` is skipped.
+- [ ] **Step 5: Commit** `git add Dockerfile .dockerignore docker-compose.yml .env.example deploy .github README.md package*.json && git commit -m "ci: Docker image, local compose, server setup, and GHCR deploy"`
+- [ ] **Step 6: Hand off** to the owner with `deploy/README.md` steps 1–11 (they create the GitHub repo, Droplet, DNS, and secrets).
