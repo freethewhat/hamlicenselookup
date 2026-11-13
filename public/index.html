@@ -77,9 +77,45 @@
       <div class="nav"><button type="button" id="next-1" class="primary" disabled>Next →</button></div>
     </section>
 
-    <!-- Task 9 fills these -->
-    <section id="step-2" class="step" aria-label="Step 2: filters" hidden></section>
-    <section id="step-3" class="step" aria-label="Step 3: list and export" hidden></section>
+    <!-- Step 2: filters -->
+    <section id="step-2" class="step" aria-label="Step 2: filters" hidden>
+      <h2>Filters</h2>
+      <p class="hint">By default you get active licenses held by individuals.</p>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="f-first-only"> First license only</label>
+        <div class="indent">
+          <label for="f-since">Since</label>
+          <input type="date" id="f-since">
+        </div>
+        <div class="indent">
+          <label class="check"><input type="checkbox" id="f-upgrades"> Also include upgrades</label>
+        </div>
+      </div>
+      <div class="field"><label class="check"><input type="checkbox" id="f-expired"> Include expired or canceled licenses</label></div>
+      <div class="field"><label class="check"><input type="checkbox" id="f-clubs"> Include club licenses</label></div>
+      <div class="nav split">
+        <button type="button" id="back-2">← Back</button>
+        <button type="button" id="next-2" class="primary">Next →</button>
+      </div>
+    </section>
+
+    <!-- Step 3: list and export -->
+    <section id="step-3" class="step" aria-label="Step 3: list and export" hidden>
+      <h2 id="result-count" role="status"></h2>
+      <div class="table-wrap">
+        <table id="result-table" hidden>
+          <thead>
+            <tr><th>Call</th><th>Name</th><th>Address</th><th>City</th><th>ZIP</th><th>County</th><th>Class</th><th>New License</th></tr>
+          </thead>
+          <tbody id="result-rows"></tbody>
+        </table>
+      </div>
+      <p id="result-note" class="hint"></p>
+      <div class="nav split">
+        <button type="button" id="back-3">← Back</button>
+        <button type="button" id="download-csv" class="primary" disabled>Download CSV</button>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">

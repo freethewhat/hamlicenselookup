@@ -1,7 +1,9 @@
-// Page shell: header step bar, banners, footer, and step switching. Task 9 fills steps 2 and 3.
+// Page shell: header step bar, banners, footer, and step switching. Steps 2 and 3 mount into #step-2 / #step-3.
 import { getMeta } from './api.js';
 import { createSelection } from './selection.js';
 import { initAreas } from './step-areas.js';
+import { initFilters } from './step-filters.js';
+import { initResults } from './step-results.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -41,3 +43,6 @@ async function loadMeta() {
 
 loadMeta();
 areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });
+
+const filters = initFilters({ onBack: () => goToStep(1), onNext: () => { goToStep(3); results.show(); } });
+const results = initResults({ selection, getFilters: filters.getFilters, onBack: () => goToStep(2), onError: showError });
