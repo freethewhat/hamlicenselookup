@@ -56,6 +56,7 @@ export function initResults({ selection, getFilters, onBack, onError, isUpdating
     $('result-count').textContent = 'Searching…';
     $('result-note').textContent = '';
     $('result-table').hidden = true;
+    $('result-table').parentElement.hidden = true;
     $('result-rows').replaceChildren();
     download.disabled = true;
     try {
@@ -71,6 +72,7 @@ export function initResults({ selection, getFilters, onBack, onError, isUpdating
       $('result-count').textContent = `${count.toLocaleString('en-US')} ${count === 1 ? 'ham' : 'hams'} found`;
       $('result-rows').replaceChildren(...preview.map(row));
       $('result-table').hidden = false;
+      $('result-table').parentElement.hidden = false;
       if (count > preview.length) {
         $('result-note').textContent = `Showing ${preview.length.toLocaleString('en-US')} of ${count.toLocaleString('en-US')}. The CSV has all of them.`;
       }

@@ -15,8 +15,8 @@ export function initUpdateBanner({ onDataReady }) {
   root.hidden = true;
   const bar = document.createElement('progress');
   bar.max = 100;
+  bar.setAttribute('aria-label', 'Data update progress');
   const text = document.createElement('span');
-  text.setAttribute('aria-live', 'polite');
   text.setAttribute('role', 'status');
   root.append(text, bar);
   document.querySelector('main').prepend(root);

@@ -8,8 +8,13 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
+  <a id="skip-link" class="skip-link" href="#main">Skip to main content</a>
+
   <header class="site-header">
-    <h1>Ham License Finder</h1>
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <h1>Ham License Finder</h1>
+    </div>
     <ol class="steps" id="step-bar" aria-label="Steps">
       <li data-step="1" class="active" aria-current="step"><span>1</span> Areas</li>
       <li data-step="2"><span>2</span> Filters</li>
@@ -22,15 +27,19 @@
   </div>
   <div id="banner-error" class="banner error" role="alert" hidden></div>
 
-  <main>
+  <main id="main" tabindex="-1">
     <!-- Step 1: areas -->
-    <section id="step-1" class="step" aria-label="Step 1: pick areas">
+    <section id="step-1" class="step" aria-labelledby="step-1-title">
+      <h2 id="step-1-title" tabindex="-1">Where should we look?</h2>
+      <p class="lead">Pick one or more states, then choose ZIP codes or counties on the map or in the form.</p>
+
       <div class="field">
         <label for="state-add">States</label>
         <div class="row">
-          <select id="state-add"><option value="">Add a state…</option></select>
+          <select id="state-add" aria-describedby="state-hint"><option value="">Add a state…</option></select>
           <ul id="state-chips" class="chips" aria-label="Picked states"></ul>
         </div>
+        <p class="hint" id="state-hint">You can add more than one state.</p>
       </div>
 
       <div class="toolbar">
@@ -45,47 +54,57 @@
       </div>
 
       <div id="map-panel">
-        <div id="map" role="application" aria-label="Map of ZIP codes and counties"></div>
+        <p class="hint callout" id="map-a11y-hint">Using a keyboard or screen reader? Switch to Form to pick areas.</p>
+        <div id="map" role="region" aria-label="Map of ZIP codes and counties" aria-describedby="map-a11y-hint"></div>
         <p class="hint" id="map-hint">Pick a state to start. Then click a shape to add or remove it.</p>
       </div>
 
       <div id="form-panel" hidden>
         <div id="form-county" class="field">
           <label for="county-search">Counties</label>
-          <input id="county-search" type="text" autocomplete="off" placeholder="Type to search counties…" list="county-options">
-          <datalist id="county-options"></datalist>
-          <p class="hint">Pick a state first. Choose a county from the list to add it.</p>
+          <div class="combo">
+            <input id="county-search" type="text" autocomplete="off" placeholder="Type to search counties…"
+              role="combobox" aria-expanded="false" aria-controls="county-listbox" aria-autocomplete="list"
+              aria-describedby="county-hint">
+            <ul id="county-listbox" role="listbox" aria-label="Matching counties" hidden></ul>
+          </div>
+          <span id="county-count" role="status" class="visually-hidden"></span>
+          <p class="hint" id="county-hint">Pick a state first. Type a name, then use the arrow keys and Enter, or click a county.</p>
         </div>
         <div id="form-zip" class="field">
           <label for="zip-text">ZIP codes</label>
-          <textarea id="zip-text" rows="3" placeholder="59801, 59802 59808"></textarea>
+          <textarea id="zip-text" rows="3" placeholder="59801, 59802 59808" aria-describedby="zip-hint"></textarea>
           <div class="row">
             <button type="button" id="zip-add">Add</button>
             <span id="zip-rejected" class="rejected" role="status"></span>
           </div>
-          <p class="hint">Separate with commas, spaces, or new lines. ZIPs already picked are kept; use ✕ on a ZIP to remove it.</p>
+          <p class="hint" id="zip-hint">Separate with commas, spaces, or new lines. ZIPs already picked are kept; use ✕ on a ZIP to remove it.</p>
         </div>
       </div>
 
       <div class="selected">
-        <h2>Selected <span id="selected-count"></span></h2>
-        <ul id="selected-list" class="chips"></ul>
+        <h3 id="selected-title" tabindex="-1">Selected <span id="selected-count"></span></h3>
+        <ul id="selected-list" class="chips" aria-labelledby="selected-title"></ul>
         <p id="zip-covered" class="hint" role="status"></p>
         <p><button type="button" id="clear-all" class="link" hidden>Clear all</button></p>
       </div>
 
-      <div class="nav"><button type="button" id="next-1" class="primary" disabled>Next →</button></div>
+      <div class="nav">
+        <p class="hint" id="next-1-hint">Pick at least one area to continue.</p>
+        <button type="button" id="next-1" class="primary" disabled aria-describedby="next-1-hint">Next →</button>
+      </div>
     </section>
 
     <!-- Step 2: filters -->
-    <section id="step-2" class="step" aria-label="Step 2: filters" hidden>
-      <h2>Filters</h2>
-      <p class="hint">By default you get active licenses held by individuals.</p>
-      <div class="field">
+    <section id="step-2" class="step" aria-labelledby="step-2-title" hidden>
+      <h2 id="step-2-title" tabindex="-1">Who should be on the list?</h2>
+      <p class="lead">By default you get active licenses held by individuals.</p>
+      <div class="field first-only">
         <label class="check"><input type="checkbox" id="f-first-only"> First license only</label>
         <div class="indent">
           <label for="f-since">Since</label>
-          <input type="date" id="f-since">
+          <input type="date" id="f-since" aria-describedby="since-hint">
+          <p class="hint" id="since-hint">People whose first ham license was granted on or after this date. Turn on "First license only" to use it.</p>
         </div>
         <div class="indent">
           <label class="check"><input type="checkbox" id="f-upgrades"> Also include upgrades</label>
@@ -100,12 +119,14 @@
     </section>
 
     <!-- Step 3: list and export -->
-    <section id="step-3" class="step" aria-label="Step 3: list and export" hidden>
-      <h2 id="result-count" role="status"></h2>
-      <div class="table-wrap">
+    <section id="step-3" class="step" aria-labelledby="step-3-title" hidden>
+      <h2 id="step-3-title" tabindex="-1">Your mailing list</h2>
+      <p id="result-count" class="result-count" role="status"></p>
+      <div class="table-wrap" role="region" tabindex="0" aria-labelledby="result-caption" hidden>
         <table id="result-table" hidden>
+          <caption id="result-caption">Preview of matching hams</caption>
           <thead>
-            <tr><th>Call</th><th>Name</th><th>Address</th><th>City</th><th>ZIP</th><th>County</th><th>Class</th><th>New License</th></tr>
+            <tr><th scope="col">Call</th><th scope="col">Name</th><th scope="col">Address</th><th scope="col">City</th><th scope="col">ZIP</th><th scope="col">County</th><th scope="col">Class</th><th scope="col">New License</th></tr>
           </thead>
           <tbody id="result-rows"></tbody>
         </table>

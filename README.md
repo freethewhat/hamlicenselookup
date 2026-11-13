@@ -133,10 +133,12 @@ docs/          Design, build plan, and real-data test results
 
 ## Contributing
 
+Read [AGENTS.md](AGENTS.md) first. Page changes must stay WCAG 2.2 AA compliant.
+
 1. Make a branch, change the code, and add or update tests.
 2. Run `npm test` and `npm run lint`.
 3. Open a pull request into `main`. GitHub Actions runs the tests. Once the server is set up, a merge into `main` also deploys it. See [deploy/README.md](deploy/README.md).
 
 ## Credits
 
-License data comes from the FCC Universal Licensing System. ZIP and county shapes come from the US Census Bureau. Place names come from GeoNames under CC-BY 4.0. Map tiles are © OpenStreetMap contributors.
+License data comes from the FCC Universal Licensing System. ZIP and county shapes come from the US Census Bureau. Place names come from GeoNames under CC-BY 4.0. Map tiles are © OpenStreetMap contributors. The Lato and Playfair Display fonts are under the SIL Open Font License.

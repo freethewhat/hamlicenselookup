@@ -172,6 +172,10 @@ export function createApp({
   // HTML/JS/CSS revalidate on every load so a deploy is picked up at once; map data and vendor files cache.
   app.use(express.static(join(ROOT, 'public'), { maxAge: 0, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
   app.use('/vendor/leaflet', express.static(join(ROOT, 'node_modules', 'leaflet', 'dist'), { maxAge: '1d' }));
+  // Fonts are served from our own server so visitors never load anything from Google.
+  for (const font of ['lato', 'playfair-display']) {
+    app.use(`/vendor/fonts/${font}`, express.static(join(ROOT, 'node_modules', '@fontsource', font), { maxAge: '1d' }));
+  }
   app.use('/geo', express.static(join(dataDir, 'geo'), { maxAge: '1d' }));
 
   // eslint-disable-next-line no-unused-vars

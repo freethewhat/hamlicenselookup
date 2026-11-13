@@ -6,6 +6,7 @@ import { initAreas } from './step-areas.js';
 import { initFilters } from './step-filters.js';
 import { initResults } from './step-results.js';
 import { initUpdateBanner } from './update-banner.js';
+import { stepHeadingId } from './focus.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,6 +24,18 @@ export function showError(message) {
 let areas = null;
 
 export function goToStep(n) {
+  const smooth = typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!smooth) return showStep(n);
+  // Focus the heading only after the browser has swapped the sections.
+  document.startViewTransition(() => showStep(n, false)).updateCallbackDone.then(() => focusStep(n));
+}
+
+function focusStep(n) {
+  // Move focus to the new step's heading so keyboard and screen-reader users know where they are.
+  document.getElementById(stepHeadingId(n)).focus();
+}
+
+function showStep(n, focus = true) {
   for (const section of document.querySelectorAll('.step')) section.hidden = section.id !== `step-${n}`;
   for (const li of $('step-bar').children) {
     const s = Number(li.dataset.step);
@@ -32,7 +45,7 @@ export function goToStep(n) {
     else li.removeAttribute('aria-current');
   }
   if (n === 1) areas?.refresh();
-  window.scrollTo(0, 0);
+  if (focus) focusStep(n);
 }
 
 async function loadMeta() {

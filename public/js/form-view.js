@@ -1,4 +1,6 @@
 // Form alternative to the map: county type-ahead and a ZIP code textarea.
+import { createCountyCombobox } from './county-combobox.js';
+
 const ZIP_RE = /^\d{5}$/;
 
 // Split free text on commas, spaces, newlines, semicolons. Returns unique valid ZIPs and rejected entries.
@@ -35,20 +37,23 @@ export function matchCounties(text, counties) {
 
 export function createFormView({ selection }) {
   const search = document.getElementById('county-search');
-  const options = document.getElementById('county-options');
   const zipText = document.getElementById('zip-text');
   const rejectedEl = document.getElementById('zip-rejected');
   let all = [];
 
+  function addOne(c) {
+    if (!selection.has('county', c.geoid)) selection.toggle('county', c.geoid, `${c.name}, ${c.state}`);
+    rejectedEl.textContent = '';
+  }
+
+  // Enter with no option highlighted: use the typed text with the matchCounties rules.
   function addCounty() {
     const text = search.value.trim();
     if (!text) return;
     const hits = matchCounties(text, all);
     if (hits.length === 1) {
-      const c = hits[0];
-      if (!selection.has('county', c.geoid)) selection.toggle('county', c.geoid, `${c.name}, ${c.state}`);
+      addOne(hits[0]);
       search.value = '';
-      rejectedEl.textContent = '';
     } else if (hits.length > 1) {
       rejectedEl.textContent = `Several counties match '${text}': ${hits.map((c) => `${c.name}, ${c.state}`).join('; ')}. Add the state, like "${hits[0].name}, ${hits[0].state}".`;
     } else {
@@ -56,16 +61,12 @@ export function createFormView({ selection }) {
     }
   }
 
-  // Picking from the datalist fires 'input' with an exact label; Enter covers typed text.
-  search.addEventListener('input', () => {
-    const t = search.value.trim();
-    if (all.some((c) => `${c.name}, ${c.state}` === t)) addCounty();
-  });
-  search.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addCounty();
-    }
+  const combo = createCountyCombobox({
+    input: search,
+    listbox: document.getElementById('county-listbox'),
+    status: document.getElementById('county-count'),
+    onPick: addOne,
+    onEnterText: addCounty,
   });
 
   document.getElementById('zip-add').addEventListener('click', () => {
@@ -79,13 +80,7 @@ export function createFormView({ selection }) {
     // counties: [{geoid, name, state}] for all picked states
     setCounties(counties) {
       all = counties;
-      options.replaceChildren(
-        ...counties.map((c) => {
-          const o = document.createElement('option');
-          o.value = `${c.name}, ${c.state}`;
-          return o;
-        }),
-      );
+      combo.setCounties(counties);
       search.disabled = counties.length === 0;
       search.placeholder = counties.length ? 'Type to search counties…' : 'Pick a state first';
     },
