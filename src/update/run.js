@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createWriteStream, existsSync, renameSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -51,35 +51,43 @@ function readMeta(dbPath, key) {
   }
 }
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+/**
+ * Takes an exclusive SQLite lock on dataDir/.update-lock.db. SQLite uses OS file locks, which
+ * work across processes and containers sharing the mount and are released by the kernel if
+ * the holder dies, so there is no stale-lock cleanup. The file itself is never deleted.
+ */
+export async function acquireUpdateLock(dataDir) {
+  await mkdir(dataDir, { recursive: true });
+  const path = join(dataDir, '.update-lock.db');
+  const db = new Database(path);
   try {
-    process.kill(pid, 0);
-    return true;
+    db.pragma('busy_timeout = 0');
+    db.exec('BEGIN EXCLUSIVE');
   } catch (err) {
-    return err.code === 'EPERM';
+    db.close();
+    if (err.code === 'SQLITE_BUSY') {
+      throw new Error(`Another update is running (lock: ${path})`, { cause: err });
+    }
+    throw err;
   }
+  return {
+    release() {
+      if (!db.open) return;
+      try {
+        db.exec('ROLLBACK');
+      } finally {
+        db.close();
+      }
+    },
+  };
 }
 
-// One update at a time per dataDir: both runs share tmp/ and swap or patch licenses.db.
 async function withLock(dataDir, fn) {
-  await mkdir(dataDir, { recursive: true });
-  const lock = join(dataDir, '.update.lock');
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await writeFile(lock, String(process.pid), { flag: 'wx' });
-      break;
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      const pid = Number((await readFile(lock, 'utf8').catch(() => '')).trim());
-      if (attempt > 0 || pidAlive(pid)) throw new Error(`Another update is running (lock: ${lock})`, { cause: err });
-      await rm(lock, { force: true }); // stale: its owner is gone
-    }
-  }
+  const lock = await acquireUpdateLock(dataDir);
   try {
     return await fn();
   } finally {
-    await rm(lock, { force: true });
+    lock.release();
   }
 }
 

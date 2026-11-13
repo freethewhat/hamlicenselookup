@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, readFile, readdir, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { runWeekly, runDaily, DAILY_DAYS } from '../../src/update/run.js';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { runWeekly, runDaily, acquireUpdateLock, DAILY_DAYS } from '../../src/update/run.js';
 import { makeFccZip } from '../helpers/fcc-fixture.js';
 import { en, hd, am, hs } from '../helpers/fcc-lines.js';
 
@@ -81,7 +83,7 @@ test('first weekly creates licenses.db, sends a User-Agent and leaves tmp empty'
     assert.equal(meta(join(data, 'licenses.db')).license_count, '3');
     assert.equal(seen[0].init.headers['User-Agent'], 'ham-license-finder');
     assert.deepEqual(await readdir(join(data, 'tmp')), []);
-    assert.deepEqual((await readdir(data)).sort(), ['licenses.db', 'tmp']);
+    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp']);
   });
 });
 
@@ -109,7 +111,7 @@ test('a stale licenses.db-wal/-shm from an older WAL-mode file is removed after 
     await writeStale(join(data, 'licenses.db-wal'));
     await writeStale(join(data, 'licenses.db-shm'));
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(3)) }) });
-    assert.deepEqual((await readdir(data)).sort(), ['licenses.db', 'tmp']);
+    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp']);
   });
 });
 
@@ -204,35 +206,57 @@ test('runDaily refuses a db with an out-of-date schema version', async () => {
   });
 });
 
-const exists = (p) => access(p).then(() => true, () => false);
+// Child process that takes the update lock and holds it until killed.
+async function holdLockInChild(data) {
+  const lockUrl = new URL('../../src/update/run.js', import.meta.url).href;
+  const child = spawn(process.execPath, ['-e', `
+    const { acquireUpdateLock } = await import(${JSON.stringify(lockUrl)});
+    await acquireUpdateLock(${JSON.stringify(data)});
+    console.log('ready');
+    setInterval(() => {}, 1000);
+  `, '--input-type=module'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code) => reject(new Error(`child exited early (${code})`)));
+    child.stdout.once('data', resolve);
+  });
+  child.removeAllListeners('exit');
+  return child;
+}
 
-test('runDaily refuses to run while a live lock exists and leaves tmp untouched', async () => {
+async function killChild(child) {
+  const closed = once(child, 'close');
+  child.kill('SIGKILL');
+  await closed;
+}
+
+test('a lock held by another process blocks runDaily; killing it releases the lock', async () => {
   await withDir(async (dir) => {
     const data = join(dir, 'data');
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(2)) }) });
-    const lock = join(data, '.update.lock');
-    await writeFile(lock, String(process.pid));
     await writeFile(join(data, 'tmp', 'in-flight.zip'), 'x');
-    await assert.rejects(runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }), /Another update is running \(lock: .*\.update\.lock\)/);
-    assert.deepEqual(await readdir(join(data, 'tmp')), ['in-flight.zip']);
-    assert.equal(await exists(lock), true); // not ours to remove
+    const child = await holdLockInChild(data);
+    try {
+      await assert.rejects(
+        runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }),
+        /Another update is running \(lock: .*\.update-lock\.db\)/,
+      );
+      await assert.rejects(runWeekly({ dataDir: data, fetchImpl: fakeFetch({}) }), /Another update is running/);
+      assert.deepEqual(await readdir(join(data, 'tmp')), ['in-flight.zip']);
+    } finally {
+      await killChild(child);
+    }
+    // The kernel released the lock; no manual cleanup.
+    assert.deepEqual(await runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }), { applied: [] });
   });
 });
 
-test('a stale lock is cleared and the run succeeds; the lock is gone afterwards', async () => {
+test('the lock can be re-acquired right after a successful run and after a failed run', async () => {
   await withDir(async (dir) => {
     const data = join(dir, 'data');
-    await mkdir(data, { recursive: true });
-    await writeFile(join(data, '.update.lock'), '2147483646');
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(2)) }) });
-    assert.equal(await exists(join(data, '.update.lock')), false);
-  });
-});
-
-test('the lock is removed after a failed run too', async () => {
-  await withDir(async (dir) => {
-    const data = join(dir, 'data');
+    (await acquireUpdateLock(data)).release();
     await assert.rejects(runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': 500 }) }), /500/);
-    assert.equal(await exists(join(data, '.update.lock')), false);
+    (await acquireUpdateLock(data)).release();
   });
 });
