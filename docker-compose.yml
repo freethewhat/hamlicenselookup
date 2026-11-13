@@ -8,4 +8,7 @@ services:
     env_file:
       - path: .env
         required: false
+    # env_file already passes AUTO_UPDATE from .env; this also honors `AUTO_UPDATE=0 docker compose up`.
+    environment:
+      AUTO_UPDATE: ${AUTO_UPDATE:-1}
     restart: unless-stopped

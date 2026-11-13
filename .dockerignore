@@ -2,6 +2,8 @@
 node_modules
 data
 data-scratch
+.claude
+.playwright-mcp
 .superpowers
 docs
 tests

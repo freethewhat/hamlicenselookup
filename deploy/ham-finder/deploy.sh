@@ -8,6 +8,15 @@ cd "$APP_DIR"
 
 PREV=$(cat last-good-tag 2>/dev/null || true)
 
+# Point .env at an image tag, keeping any other settings (such as AUTO_UPDATE=0) the owner added.
+set_tag() {
+  local tmp
+  tmp=$(mktemp .env.XXXXXX)
+  { grep -v '^IMAGE_TAG=' .env 2>/dev/null || true; echo "IMAGE_TAG=$1"; } > "$tmp"
+  chmod 644 "$tmp"
+  mv "$tmp" .env
+}
+
 healthy() {
   docker compose exec -T app node -e "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1
 }
@@ -16,7 +25,7 @@ healthy() {
 # (one is not enough: a crash-looping container can answer once).
 deploy_new() {
   IMAGE_TAG="$TAG" docker compose pull || return 1
-  echo "IMAGE_TAG=$TAG" > .env
+  set_tag "$TAG"
   docker compose up -d || return 1
   local streak=0 i
   for i in $(seq 1 15); do
@@ -29,7 +38,7 @@ deploy_new() {
 
 rollback() {
   if [ -n "$PREV" ]; then
-    echo "IMAGE_TAG=$PREV" > .env
+    set_tag "$PREV"
     docker compose up -d || true
     echo "Rolled back to $PREV"
   fi
@@ -46,12 +55,10 @@ echo "$TAG" > last-good-tag
 rc=0
 out=$(docker compose exec -T app node scripts/check-schema.js) || rc=$?
 echo "$out"
-if [ "$rc" = 3 ]; then
-  if [[ "$out" == *geo=outdated* || "$out" == *geo=missing* ]]; then
-    systemctl start --no-block ham-finder-setup.service
-  else
-    systemctl start --no-block ham-finder-weekly.service
-  fi
+# Anything not ok: the setup job runs `auto`, which rebuilds what is missing or outdated and
+# exits quietly if the app's own start-up update already holds the update lock.
+if [ "$rc" != 0 ]; then
+  systemctl start --no-block ham-finder-setup.service
 fi
 
 # Remove old images of this app, keeping the new and previous tag.

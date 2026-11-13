@@ -2,6 +2,9 @@ services:
   app:
     container_name: ham-finder
     image: __IMAGE__:${IMAGE_TAG}
+    environment:
+      # Set AUTO_UPDATE=0 in /srv/apps/ham-finder/.env to skip the start-up update.
+      AUTO_UPDATE: ${AUTO_UPDATE:-1}
     volumes:
       - ./data:/data
     networks:

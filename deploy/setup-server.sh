@@ -6,6 +6,8 @@ set -euo pipefail
 
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 PUBKEY="${1:?usage: setup-server.sh <deploy-public-key>}"
+# One line only: a newline would let the argument add a second, unrestricted key.
+case "$PUBKEY" in *$'\n'*|*$'\r'*) echo "public key must be a single line" >&2; exit 2 ;; esac
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -55,7 +57,7 @@ docker compose -f /srv/apps/caddy/docker-compose.yml up -d
 # Deploy user: no password, no sudo group, not in the docker group.
 id deploy >/dev/null 2>&1 || adduser --disabled-password --gecos "" deploy
 install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
-echo "command=\"/srv/apps/bin/deploy-dispatch\",no-port-forwarding,no-agent-forwarding,no-pty $PUBKEY" \
+echo "restrict,command=\"/srv/apps/bin/deploy-dispatch\" $PUBKEY" \
   > /home/deploy/.ssh/authorized_keys
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
