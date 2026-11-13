@@ -20,7 +20,7 @@ export function parseCountsDate(text) {
   return `${m[3]}-${MONTHS[m[1]]}-${m[2].padStart(2, '0')}`;
 }
 
-async function readText(stream) {
+export async function readText(stream) {
   const chunks = [];
   for await (const c of stream) chunks.push(c);
   return Buffer.concat(chunks).toString('latin1');
@@ -42,6 +42,69 @@ async function streamInto(db, open, prefix, stmt, toParams) {
     if (db.inTransaction) db.exec('ROLLBACK');
     throw err;
   }
+}
+
+export const STAGE_SQL = `
+  CREATE TABLE stage.en (usid INTEGER PRIMARY KEY, entity_name, first, mi, last, suffix,
+    street, city, state, zip, zip5, po_box, frn, applicant_type);
+  CREATE TABLE stage.hd (usid INTEGER PRIMARY KEY, call, status, service,
+    grant_date, expired_date, cancel_date, last_action_date);
+  CREATE TABLE stage.am (usid INTEGER PRIMARY KEY, op_class, trustee_call, prev_call, prev_class);
+  CREATE TABLE stage.hs (usid INTEGER, date, code);`;
+
+export function createStage(db) {
+  db.exec(STAGE_SQL);
+}
+
+/**
+ * Streams EN/HD/AM/HS from the zip entries into the stage tables (stage must be attached
+ * and created). Event rows go to hsTable ('history' or 'stage.hs'). EN rows outside a
+ * non-empty stateSet are dropped.
+ */
+export async function loadStage(db, entries, stateSet, hsTable) {
+  await streamInto(db, entries.get('EN.dat'), 'EN',
+    db.prepare('INSERT OR REPLACE INTO stage.en VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    (f) => {
+      const e = parseEN(f);
+      if (!e || (stateSet.size && !stateSet.has(e.state))) return null;
+      return [e.usid, e.entityName, e.first, e.mi, e.last, e.suffix, e.street, e.city,
+        e.state, e.zip, e.zip5, e.poBox, e.frn, e.applicantType];
+    });
+  await streamInto(db, entries.get('HD.dat'), 'HD',
+    db.prepare('INSERT OR REPLACE INTO stage.hd VALUES (?,?,?,?,?,?,?,?)'),
+    (f) => {
+      const h = parseHD(f);
+      return [h.usid, h.call.trim().toUpperCase(), h.status, h.service, h.grantDate,
+        h.expiredDate, h.cancelDate, h.lastActionDate];
+    });
+  await streamInto(db, entries.get('AM.dat'), 'AM',
+    db.prepare('INSERT OR REPLACE INTO stage.am VALUES (?,?,?,?,?)'),
+    (f) => {
+      const a = parseAM(f);
+      return [a.usid, a.opClass, a.trusteeCall, a.prevCall, a.prevClass];
+    });
+  await streamInto(db, entries.get('HS.dat'), 'HS',
+    db.prepare(`INSERT INTO ${hsTable} (usid, date, code) VALUES (?,?,?)`),
+    (f) => {
+      const h = parseHS(f);
+      return h.date ? [h.usid, h.date, h.code] : null;
+    });
+}
+
+/** HD drives; EN is an INNER JOIN when filtering by state, else LEFT JOIN. */
+export function licenseInsertSql(filtered) {
+  return `INSERT INTO licenses (usid, call, status, service, grant_date, expired_date, cancel_date,
+        last_action_date, applicant_type, entity_name, first, mi, last, suffix, street, po_box,
+        city, state, zip, zip5, frn, op_class, prev_call, prev_class, trustee_call)
+      SELECT hd.usid, hd.call, hd.status, hd.service, hd.grant_date, hd.expired_date,
+        hd.cancel_date, hd.last_action_date, en.applicant_type, en.entity_name, en.first,
+        en.mi, en.last, en.suffix, en.street, en.po_box, en.city, en.state, en.zip,
+        COALESCE(en.zip5, ''), COALESCE(en.frn, ''), COALESCE(am.op_class, ''),
+        COALESCE(am.prev_call, ''), COALESCE(am.prev_class, ''), COALESCE(am.trustee_call, '')
+      FROM stage.hd hd
+      ${filtered ? 'JOIN' : 'LEFT JOIN'} stage.en en ON en.usid = hd.usid
+      LEFT JOIN stage.am am ON am.usid = hd.usid
+      ORDER BY hd.usid`;
 }
 
 // Page walkers: yield rows in order, fetching one page at a time.
@@ -77,8 +140,8 @@ const FRN_PASS_WHERE = `first_license_date IS NOT NULL AND frn <> '' AND EXISTS 
 /**
  * Recomputes first_license_date, upgrade_date and earliest_event_date for the given
  * usids (all licenses when omitted), then clears first_license_date where another
- * license on the same FRN has an earlier event. With a usid list, the FRN pass covers
- * the FRNs of those licenses only.
+ * license on the same FRN has an earlier event. With a usid list, the set is widened to
+ * every license sharing an FRN with one of them, and the FRN pass covers those FRNs.
  */
 export function reclassify(db, usids) {
   const update = db.prepare(`UPDATE licenses SET first_license_date = ?, upgrade_date = ?,
@@ -123,15 +186,23 @@ export function reclassify(db, usids) {
   const getLic = db.prepare(`SELECT usid, op_class, prev_call, prev_class, grant_date, frn
     FROM licenses WHERE usid = ?`);
   const getHist = db.prepare('SELECT date, code FROM history WHERE usid = ?');
+  const frnOf = db.prepare('SELECT frn FROM licenses WHERE usid = ?');
+  const sameFrn = db.prepare('SELECT usid FROM licenses WHERE frn = ?');
   const clear = db.prepare(`UPDATE licenses SET first_license_date = NULL
     WHERE frn = ? AND ${FRN_PASS_WHERE}`);
   db.transaction(() => {
+    // Every license sharing an affected FRN is recomputed, so first_license_date is
+    // restored on those that an earlier same-FRN license no longer shadows.
     const frns = new Set();
     for (const usid of usids) {
+      const row = frnOf.get(usid);
+      if (row?.frn) frns.add(row.frn);
+    }
+    const all = new Set(usids);
+    for (const frn of frns) for (const r of sameFrn.all(frn)) all.add(r.usid);
+    for (const usid of all) {
       const lic = getLic.get(usid);
-      if (!lic) continue;
-      write(lic, getHist.all(usid));
-      if (lic.frn) frns.add(lic.frn);
+      if (lic) write(lic, getHist.all(usid));
     }
     for (const frn of frns) clear.run(frn);
   })();
@@ -141,7 +212,7 @@ async function removeDb(path) {
   await Promise.all(['', '-wal', '-shm', '-journal'].map((s) => rm(path + s, { force: true })));
 }
 
-const REQUIRED = ['EN.dat', 'HD.dat', 'AM.dat', 'HS.dat', 'counts'];
+export const REQUIRED = ['EN.dat', 'HD.dat', 'AM.dat', 'HS.dat', 'counts'];
 
 /**
  * Builds a fresh licenses.db at outDbPath from an FCC weekly zip. Any file already at
@@ -170,55 +241,10 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
     db.pragma('temp_store = FILE');
     db.exec(SCHEMA_SQL);
     db.exec(`ATTACH DATABASE '${stagePath.replace(/'/g, "''")}' AS stage`);
-    db.exec(`
-      CREATE TABLE stage.en (usid INTEGER PRIMARY KEY, entity_name, first, mi, last, suffix,
-        street, city, state, zip, zip5, po_box, frn, applicant_type);
-      CREATE TABLE stage.hd (usid INTEGER PRIMARY KEY, call, status, service,
-        grant_date, expired_date, cancel_date, last_action_date);
-      CREATE TABLE stage.am (usid INTEGER PRIMARY KEY, op_class, trustee_call, prev_call, prev_class);`);
+    createStage(db);
+    await loadStage(db, entries, new Set(states), 'history');
 
-    const stateSet = new Set(states);
-    await streamInto(db, entries.get('EN.dat'), 'EN',
-      db.prepare('INSERT OR REPLACE INTO stage.en VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-      (f) => {
-        const e = parseEN(f);
-        if (!e || (stateSet.size && !stateSet.has(e.state))) return null;
-        return [e.usid, e.entityName, e.first, e.mi, e.last, e.suffix, e.street, e.city,
-          e.state, e.zip, e.zip5, e.poBox, e.frn, e.applicantType];
-      });
-    await streamInto(db, entries.get('HD.dat'), 'HD',
-      db.prepare('INSERT OR REPLACE INTO stage.hd VALUES (?,?,?,?,?,?,?,?)'),
-      (f) => {
-        const h = parseHD(f);
-        return [h.usid, h.call.trim().toUpperCase(), h.status, h.service, h.grantDate,
-          h.expiredDate, h.cancelDate, h.lastActionDate];
-      });
-    await streamInto(db, entries.get('AM.dat'), 'AM',
-      db.prepare('INSERT OR REPLACE INTO stage.am VALUES (?,?,?,?,?)'),
-      (f) => {
-        const a = parseAM(f);
-        return [a.usid, a.opClass, a.trusteeCall, a.prevCall, a.prevClass];
-      });
-    await streamInto(db, entries.get('HS.dat'), 'HS',
-      db.prepare('INSERT INTO history (usid, date, code) VALUES (?,?,?)'),
-      (f) => {
-        const h = parseHS(f);
-        return h.date ? [h.usid, h.date, h.code] : null;
-      });
-
-    db.exec(`
-      INSERT INTO licenses (usid, call, status, service, grant_date, expired_date, cancel_date,
-        last_action_date, applicant_type, entity_name, first, mi, last, suffix, street, po_box,
-        city, state, zip, zip5, frn, op_class, prev_call, prev_class, trustee_call)
-      SELECT hd.usid, hd.call, hd.status, hd.service, hd.grant_date, hd.expired_date,
-        hd.cancel_date, hd.last_action_date, en.applicant_type, en.entity_name, en.first,
-        en.mi, en.last, en.suffix, en.street, en.po_box, en.city, en.state, en.zip,
-        COALESCE(en.zip5, ''), COALESCE(en.frn, ''), COALESCE(am.op_class, ''),
-        COALESCE(am.prev_call, ''), COALESCE(am.prev_class, ''), COALESCE(am.trustee_call, '')
-      FROM stage.hd hd
-      ${states.length ? 'JOIN' : 'LEFT JOIN'} stage.en en ON en.usid = hd.usid
-      LEFT JOIN stage.am am ON am.usid = hd.usid
-      ORDER BY hd.usid;
+    db.exec(`${licenseInsertSql(states.length > 0)};
       DETACH DATABASE stage;`);
     await removeDb(stagePath);
 
