@@ -193,12 +193,65 @@ cleanly in Excel and Google Sheets.
 - A local SQLite database for the license data. About 1–2 million
   records is well within SQLite's range. Index ZIP, state, status, and
   dates.
-- A scheduled job (cron or in-process) for the weekly and daily loads.
-- Target server: a small Linux VPS (assume 1 GB RAM, 25 GB disk,
-  Ubuntu LTS), run as a systemd service. Parse the FCC files as a
-  stream, not all in memory. Build the new weekly database as a new
-  file and swap it in when done, so the old copy stays live until then.
-  Delete scratch files after each load. No specific server exists yet.
+- Target server: a DigitalOcean Droplet, 2 GB RAM, 50 GB disk,
+  Ubuntu LTS, with the app run as a systemd service. Parse the FCC
+  files as a stream, not all in memory. Details in section 11b.
+
+## 11a. Data updates
+
+**Decided:** the update schedule runs **on the same VPS** as the app,
+using systemd timers. No extra hosting.
+
+- **Weekly (Sunday night, after the FCC posts the file):** download
+  `l_amat.zip`, build a **new** database file beside the live one, run
+  checks, then switch the app to the new file. Checks include: the load
+  finished without errors, and the license count is not much lower than
+  last week's (builder picks the threshold). If any step fails, the app
+  keeps the old file. Delete scratch files after each load.
+- **Daily (Monday–Saturday mornings):** download that day's
+  `l_am_*.zip` and apply the changes to the live database.
+- The app shows **"Data as of: <date>"**.
+- Failures go to the server log (journald). The page shows a warning
+  when the data is more than 10 days old.
+- A way to run the weekly load by hand (for the first setup and for
+  recovery).
+
+## 11b. CI/CD and hosting
+
+**Decided:** code on GitHub, with **automatic deploy**.
+
+- **CI:** GitHub Actions runs lint and tests on every pull request and
+  push.
+- **CD:** when a change is merged to `main` and the tests pass, GitHub
+  Actions copies the new code to the VPS over SSH and restarts the app.
+  The SSH key and server address live in GitHub repository secrets. Use
+  a dedicated deploy user on the server with only the rights it needs.
+- The database is **not** part of the deploy. A deploy must not wipe or
+  rebuild the data.
+- First-time server setup is a written, repeatable script or checklist
+  (install Node.js, create user, systemd service and timers, firewall,
+  HTTPS with Let's Encrypt).
+
+**Hosting provider (decided):** a **DigitalOcean** Basic Droplet with
+**2 GB RAM** (about $12/month, 50 GB disk, Ubuntu LTS), in a US region
+(builder picks; a West Coast region such as SFO is closest to Montana).
+Resize later if needed. (SiteGround was ruled out: its normal plans are
+shared hosting, and its cloud plans start near $100/month. Hetzner was
+ruled out: its US servers cost more after 2026 price rises, and its
+reviews are weaker.)
+
+**Many apps on one server (decided):** the owner wants to host more apps
+on this Droplet later. So:
+
+- **Caddy** runs in front as the reverse proxy (it sends each web
+  address to the right app) and gets HTTPS certificates automatically.
+- Each app runs as its **own systemd service, own Linux user, own port,
+  and own folder** (for example `/srv/ham-finder`). This app must not
+  assume it owns the whole server.
+- Each app gets its own subdomain (for example `hams.<club-domain>`).
+  The club's domain and DNS are set up by the owner.
+- The setup script installs Caddy and shared tools once, and this app's
+  pieces separately, so a second app can be added the same way.
 
 ## 12. Load and limits
 
@@ -229,4 +282,5 @@ so a later filter can be added easily.
 - Shape simplification and map loading strategy.
 - Visual design.
 - CSV column order and names.
-- Tests and deployment scripts.
+- Test details, and the exact deploy and setup scripts (within section
+  11b).
