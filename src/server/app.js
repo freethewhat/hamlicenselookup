@@ -56,7 +56,10 @@ function parseSearch(geoDb, body) {
   return { zips: resolved.zips, filters: normalized };
 }
 
-export function createApp({ dataDir, now = () => new Date(), recheckMs, rateLimitPerMinute = 120 }) {
+export function createApp({
+  dataDir, now = () => new Date(), recheckMs, rateLimitPerMinute = 120,
+  exportDrainTimeoutMs = 60_000, exportTimeoutMs = 5 * 60_000,
+}) {
   const handle = openHandle({
     licenseDbPath: join(dataDir, 'licenses.db'),
     geoDbPath: join(dataDir, 'geo.db'),
@@ -149,7 +152,10 @@ export function createApp({ dataDir, now = () => new Date(), recheckMs, rateLimi
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="hams-${day}.csv"`,
     });
-    await writeCsv(iterateLicenses(req.db, zips, filters), res);
+    await writeCsv(iterateLicenses(req.db, zips, filters), res, {
+      drainTimeoutMs: exportDrainTimeoutMs,
+      deadlineMs: exportTimeoutMs,
+    });
   });
 
   // HTML/JS/CSS revalidate on every load so a deploy is picked up at once; map data and vendor files cache.

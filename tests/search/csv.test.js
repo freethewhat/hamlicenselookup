@@ -57,3 +57,34 @@ test('writeCsv settles and releases the iterator when the destination closes', a
   assert.equal(returned, true);
   assert.ok(produced < 5);
 });
+
+// An endless row source that records whether it was released.
+function endlessRows() {
+  const rows = {
+    returned: false,
+    [Symbol.iterator]() { return this; },
+    next() { return { done: false, value: { call: 'K7AAA' } }; },
+    return() { rows.returned = true; return { done: true }; },
+  };
+  return rows;
+}
+
+test('writeCsv destroys a destination that never drains and releases the iterator', async () => {
+  const rows = endlessRows();
+  // A client that never reads: write() never calls back, so 'drain' never fires.
+  const out = new Writable({ highWaterMark: 1, write() {} });
+  const started = Date.now();
+  await writeCsv(rows, out, { drainTimeoutMs: 50 });
+  assert.equal(out.destroyed, true);
+  assert.equal(rows.returned, true);
+  assert.ok(Date.now() - started >= 45);
+});
+
+test('writeCsv destroys the destination when the whole export passes its deadline', async () => {
+  const rows = endlessRows();
+  // A slow client: each chunk drains, just slowly, so only the overall deadline stops it.
+  const out = new Writable({ highWaterMark: 1, write(chunk, enc, cb) { setTimeout(cb, 5); } });
+  await writeCsv(rows, out, { drainTimeoutMs: 1000, deadlineMs: 80 });
+  assert.equal(out.destroyed, true);
+  assert.equal(rows.returned, true);
+});

@@ -41,13 +41,18 @@ export const csvLine = (values) => values.map(cell).join(',');
 
 // Writes rows to `out` with backpressure. Resolves early (without throwing) if the
 // destination closes mid-export, and releases the row iterator so SQLite can finish.
-export async function writeCsv(rows, out) {
+// An open iterator holds a read lock that blocks the daily update, so a client that stops
+// reading for `drainTimeoutMs`, or an export that runs past `deadlineMs`, is cut off.
+export async function writeCsv(rows, out, { drainTimeoutMs = Infinity, deadlineMs = Infinity } = {}) {
+  const deadline = Number.isFinite(deadlineMs) ? setTimeout(() => out.destroy(), deadlineMs) : null;
   // Returns false when the destination is gone.
   const write = async (chunk) => {
     if (out.destroyed) return false;
     if (out.write(chunk)) return true;
     await new Promise((resolve) => {
+      const stall = Number.isFinite(drainTimeoutMs) ? setTimeout(() => out.destroy(), drainTimeoutMs) : null;
       const done = () => {
+        clearTimeout(stall);
         out.off('drain', done);
         out.off('close', done);
         out.off('error', done);
@@ -73,6 +78,7 @@ export async function writeCsv(rows, out) {
     if (!ok) rows.return?.();
     else out.end();
   } finally {
+    clearTimeout(deadline);
     out.off('error', ignore);
   }
 }

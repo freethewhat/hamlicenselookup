@@ -6,6 +6,10 @@ import { GEO_SCHEMA_VERSION } from '../geo/build.js';
 
 // Old connections may still be streaming a CSV when a file is swapped, so they close late.
 const CLOSE_GRACE_MS = 10 * 60 * 1000;
+// A connection with an open iterator cannot close yet; try again this often.
+const BUSY_RETRY_MS = 30 * 1000;
+
+const isBusy = (err) => /busy executing a query/.test(err?.message ?? '');
 
 function schemaState(path, expected) {
   if (!existsSync(path)) return 'missing';
@@ -41,7 +45,9 @@ const inode = (p) => {
 
 // Read-only handle on licenses.db with geo.db attached as `geo`. Both files are replaced by
 // atomic rename, so we re-stat them and reopen when either inode changes.
-export function openHandle({ licenseDbPath, geoDbPath, recheckMs = 5000 }) {
+export function openHandle({
+  licenseDbPath, geoDbPath, recheckMs = 5000, closeGraceMs = CLOSE_GRACE_MS, busyRetryMs = BUSY_RETRY_MS,
+}) {
   let db = null;
   let state = 'missing';
   let ids = null;
@@ -49,15 +55,29 @@ export function openHandle({ licenseDbPath, geoDbPath, recheckMs = 5000 }) {
   const retired = new Set();
 
   // A request may still be streaming from the old connection, so close it late.
-  const retire = (old) => {
+  // better-sqlite3 refuses to close while an iterator is open (a stalled export), so retry later.
+  const retire = (old, delay = closeGraceMs) => {
     if (!old) return;
-    const timer = setTimeout(() => {
+    const entry = { old };
+    entry.timer = setTimeout(() => {
       retired.delete(entry);
-      if (old.open) old.close();
-    }, CLOSE_GRACE_MS);
-    timer.unref();
-    const entry = { timer, old };
+      try {
+        if (old.open) old.close();
+      } catch (err) {
+        if (!isBusy(err)) throw err;
+        retire(old, busyRetryMs);
+      }
+    }, delay);
+    entry.timer.unref();
     retired.add(entry);
+  };
+  // On shutdown a busy connection is left for process exit to clean up.
+  const closeQuietly = (conn) => {
+    try {
+      if (conn?.open) conn.close();
+    } catch (err) {
+      if (!isBusy(err)) throw err;
+    }
   };
 
   function reopen() {
@@ -102,10 +122,10 @@ export function openHandle({ licenseDbPath, geoDbPath, recheckMs = 5000 }) {
     close() {
       for (const { timer, old } of retired) {
         clearTimeout(timer);
-        if (old.open) old.close();
+        closeQuietly(old);
       }
       retired.clear();
-      if (db?.open) db.close();
+      closeQuietly(db);
       db = null;
       state = 'missing';
     },

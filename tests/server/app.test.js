@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, rename, writeFile, copyFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -216,5 +217,56 @@ test('/api/status has its own limit, so polling does not use up the API limit', 
   await withApp(fixture, { rateLimitPerMinute: 2 }, async (base) => {
     for (let i = 0; i < 5; i++) assert.equal((await fetch(`${base}/api/status`)).status, 200);
     assert.equal((await fetch(`${base}/api/meta`)).status, 200);
+  });
+});
+
+// Many rows, so the CSV overflows the socket buffers of a client that never reads.
+const bigFixture = (dir) => {
+  makeGeoDb(join(dir, 'geo.db'), { counties: COUNTIES, zips: GEO_ZIPS });
+  const db = new Database(join(dir, 'licenses.db'));
+  db.exec(SCHEMA_SQL + INDEX_SQL);
+  db.prepare('INSERT INTO meta VALUES (?, ?)').run('schema_version', String(LICENSE_SCHEMA_VERSION));
+  const ins = db.prepare(`INSERT INTO licenses (usid, call, status, applicant_type, last, first, street, zip, zip5,
+    first_license_date, op_class) VALUES (?, ?, 'A', 'I', 'TESTER', 'ALPHA', ?, '59801', '59801', '2026-05-01', 'T')`);
+  db.transaction(() => {
+    for (let i = 1; i <= 100_000; i++) ins.run(i, `K7${i}`, `${i} Test Street`.padEnd(120, 'x'));
+  })();
+  db.close();
+};
+
+// Commits a write the way the daily update does; fails at once if a reader holds a lock.
+function tryCommit(dir) {
+  const db = new Database(join(dir, 'licenses.db'), { timeout: 0 });
+  try {
+    db.prepare("INSERT OR REPLACE INTO meta VALUES ('probe', '1')").run();
+    return 'ok';
+  } catch (err) {
+    return err.code;
+  } finally {
+    db.close();
+  }
+}
+
+test('an export whose client stops reading is cut off and releases its read lock', async () => {
+  await withApp(bigFixture, { exportDrainTimeoutMs: 150 }, async (base, dir) => {
+    const req = request(`${base}/api/export`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
+      res.pause(); // never read the body
+      res.on('error', () => {});
+    });
+    req.on('error', () => {});
+    req.end(JSON.stringify({ counties: ['30063'], filters }));
+    try {
+      await new Promise((r) => setTimeout(r, 80));
+      assert.equal(tryCommit(dir), 'SQLITE_BUSY'); // the stalled export holds its read lock
+      // Once the drain timeout destroys the response, the iterator is released and a write commits.
+      let result = 'SQLITE_BUSY';
+      for (let i = 0; i < 60 && result !== 'ok'; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        result = tryCommit(dir);
+      }
+      assert.equal(result, 'ok');
+    } finally {
+      req.destroy();
+    }
   });
 });
