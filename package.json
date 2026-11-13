@@ -1,0 +1,32 @@
+{
+  "name": "ham-finder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint .",
+    "start": "node src/server/index.js",
+    "update:weekly": "node scripts/update.js weekly",
+    "update:daily": "node scripts/update.js daily",
+    "build:geo": "node --max-old-space-size=3072 scripts/build-geo.js",
+    "setup": "npm run build:geo && npm run update:weekly"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.1.1",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "leaflet": "^1.9.4",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "mapshaper": "^0.7.101",
+    "yazl": "^3.3.1"
+  }
+}
