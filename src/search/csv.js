@@ -1,4 +1,3 @@
-import { once } from 'node:events';
 import { CLASS_LABELS, STATUS_LABELS } from '../fcc/fields.js';
 
 const zip = (z) => (/^\d{9}$/.test(z ?? '') ? `${z.slice(0, 5)}-${z.slice(5)}` : (z ?? ''));
@@ -40,11 +39,40 @@ function cell(value) {
 // One CSV record, without the line terminator.
 export const csvLine = (values) => values.map(cell).join(',');
 
+// Writes rows to `out` with backpressure. Resolves early (without throwing) if the
+// destination closes mid-export, and releases the row iterator so SQLite can finish.
 export async function writeCsv(rows, out) {
+  // Returns false when the destination is gone.
   const write = async (chunk) => {
-    if (!out.write(chunk)) await once(out, 'drain');
+    if (out.destroyed) return false;
+    if (out.write(chunk)) return true;
+    await new Promise((resolve) => {
+      const done = () => {
+        out.off('drain', done);
+        out.off('close', done);
+        out.off('error', done);
+        resolve();
+      };
+      out.on('drain', done);
+      out.on('close', done);
+      out.on('error', done);
+    });
+    return !out.destroyed;
   };
-  await write(`\uFEFF${csvLine(CSV_COLUMNS.map(([h]) => h))}\r\n`);
-  for (const row of rows) await write(`${csvLine(CSV_COLUMNS.map(([, f]) => f(row)))}\r\n`);
-  out.end();
+  // Swallow stream errors here; a broken client must not crash the process.
+  const ignore = () => {};
+  out.on('error', ignore);
+  try {
+    let ok = await write(`\uFEFF${csvLine(CSV_COLUMNS.map(([h]) => h))}\r\n`);
+    if (ok) {
+      for (const row of rows) {
+        ok = await write(`${csvLine(CSV_COLUMNS.map(([, f]) => f(row)))}\r\n`);
+        if (!ok) break;
+      }
+    }
+    if (!ok) rows.return?.();
+    else out.end();
+  } finally {
+    out.off('error', ignore);
+  }
 }

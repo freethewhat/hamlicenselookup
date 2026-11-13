@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 import { CSV_COLUMNS, csvLine, writeCsv } from '../../src/search/csv.js';
 
 async function render(rows) {
@@ -30,4 +30,30 @@ test('csv escapes and neutralizes formulas', async () => {
   assert.ok(lines[2].includes(',Technician,No,'));
   assert.equal(csvLine(['=SUM(A1)', 'a"b', '-1', '@x', '\tx', '']), `'=SUM(A1),"a""b",'-1,'@x,'\tx,`);
   assert.equal(csvLine(['x\ny']), '"x\ny"');
+});
+
+test('writeCsv settles and releases the iterator when the destination closes', async () => {
+  let returned = false;
+  let produced = 0;
+  const rows = {
+    [Symbol.iterator]() { return this; },
+    next() { produced++; return { done: false, value: { call: 'K7AAA' } }; },
+    return() { returned = true; return { done: true }; },
+  };
+  let out;
+  out = new Writable({
+    highWaterMark: 1,
+    write(chunk, enc, cb) {
+      setImmediate(() => { out.destroy(); });
+      // never calls back: simulates a stalled client that then disconnects
+      void cb;
+    },
+  });
+  const result = await Promise.race([
+    writeCsv(rows, out).then(() => 'settled'),
+    new Promise((resolve) => setTimeout(() => resolve('hung'), 1000)),
+  ]);
+  assert.equal(result, 'settled');
+  assert.equal(returned, true);
+  assert.ok(produced < 5);
 });

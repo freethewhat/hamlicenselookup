@@ -1,12 +1,12 @@
 import { openSync, readSync, closeSync, createWriteStream, existsSync, rmSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename as fsRename, rm, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { readZipEntries } from '../fcc/unzip.js';
-import { download } from '../update/run.js';
+import { download, acquireUpdateLock } from '../update/run.js';
 import { STATES, STATE_BY_FIPS, STATE_BY_ABBR } from './fips.js';
 
 export const GEO_SCHEMA_VERSION = 1;
@@ -133,17 +133,53 @@ async function placeStateFiles(srcDir, geoDir, name) {
     const src = join(srcDir, `${s.abbr}.json`);
     if (!existsSync(src)) continue;
     await mkdir(join(geoDir, s.abbr), { recursive: true });
-    await rename(src, join(geoDir, s.abbr, `${name}.geojson`));
+    await fsRename(src, join(geoDir, s.abbr, `${name}.geojson`));
   }
 }
 
-export async function buildGeo({ dataDir }) {
+/**
+ * Replaces dataDir/geo and dataDir/geo.db with the new ones. The old copies are kept as
+ * *.old until both new ones are in place; if anything fails they are put back.
+ */
+export async function swapGeo({ dataDir, newGeoDir, newDbPath, rename = fsRename }) {
+  const geo = join(dataDir, 'geo');
+  const db = join(dataDir, 'geo.db');
+  const moved = [];
+  try {
+    for (const p of [geo, db]) {
+      if (existsSync(p)) {
+        await rm(`${p}.old`, { recursive: true, force: true });
+        await rename(p, `${p}.old`);
+        moved.push(p);
+      }
+    }
+    await rename(newGeoDir, geo);
+    await rename(newDbPath, db);
+  } catch (err) {
+    for (const p of [geo, db]) await rm(p, { recursive: true, force: true }).catch(() => {});
+    for (const p of moved) await fsRename(`${p}.old`, p).catch(() => {});
+    throw err;
+  }
+  for (const p of [geo, db]) await rm(`${p}.old`, { recursive: true, force: true });
+}
+
+// Holds the shared update lock so a geo build cannot run alongside a weekly or daily load.
+export async function buildGeo({ dataDir, fetchImpl = fetch }) {
+  const lock = await acquireUpdateLock(dataDir);
+  try {
+    await buildGeoLocked({ dataDir, fetchImpl });
+  } finally {
+    lock.release();
+  }
+}
+
+async function buildGeoLocked({ dataDir, fetchImpl }) {
   const mapshaper = createRequire(import.meta.url)('mapshaper');
-  const tmp = join(dataDir, 'tmp');
+  const tmp = join(dataDir, 'tmp-geo');
   await rm(tmp, { recursive: true, force: true });
   await mkdir(tmp, { recursive: true });
   const dl = async (url, name) => {
-    await download(fetch, url, join(tmp, name));
+    await download(fetchImpl, url, join(tmp, name));
     return join(tmp, name);
   };
 
@@ -211,10 +247,7 @@ export async function buildGeo({ dataDir }) {
   await placeStateFiles(countyOut, newGeo, 'counties');
   await placeStateFiles(zctaOut, newGeo, 'zips');
 
-  await rm(join(dataDir, 'geo'), { recursive: true, force: true });
-  await rename(newGeo, join(dataDir, 'geo'));
-  await rm(join(dataDir, 'geo.db'), { force: true });
-  await rename(tmpDb, join(dataDir, 'geo.db'));
+  await swapGeo({ dataDir, newGeoDir: newGeo, newDbPath: tmpDb });
   await rm(tmp, { recursive: true, force: true });
   console.log(`geo built: ${zipCount} ZIPs, ${unassigned} without a county`);
 }
