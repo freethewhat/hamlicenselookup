@@ -66,3 +66,24 @@ test('remove of an absent item does not fire onChange', () => {
   s.remove('zip', 'nope');
   assert.equal(n, 0);
 });
+
+test('restore replaces picks and fires one change event', () => {
+  const s = createSelection();
+  s.toggle('zip', '1', '1');
+  let calls = 0;
+  s.onChange(() => calls++);
+  const items = [
+    { type: 'zip', id: '59801', label: '59801' },
+    { type: 'county', id: '30063', label: 'Missoula, MT' },
+  ];
+  s.restore(items);
+  assert.equal(calls, 1);
+  assert.deepEqual(s.items(), items);
+  assert.equal(s.has('zip', '1'), false);
+});
+
+test('restore skips items without type or id, and later duplicates', () => {
+  const s = createSelection();
+  s.restore([{ type: 'zip' }, { id: '1' }, null, { type: 'zip', id: '2', label: 'a' }, { type: 'zip', id: '2', label: 'b' }]);
+  assert.deepEqual(s.items(), [{ type: 'zip', id: '2', label: 'a' }]);
+});
