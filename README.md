@@ -20,9 +20,22 @@ docker compose up
 
 Open http://localhost:3100.
 
+`docker compose up` builds the app image on your computer from the code you cloned. You do not need a prebuilt image or a GitHub account. (The image on GitHub's container registry is only for the production server.)
+
 On the first start, the app downloads about 280 MB (Census map files and the FCC license file) and builds its data. This takes a few minutes. A progress bar at the top of the page shows each step. You can use the page when the bar finishes.
 
 On Linux, the container runs as user id 1000. If your user id is not 1000 (check with `id -u`), run `sudo chown 1000:1000 data` once.
+
+### Getting new code
+
+Docker keeps using the image it built the first time. After you pull new code, rebuild it:
+
+```bash
+git pull
+docker compose up --build
+```
+
+Your data in `data/` stays. Stop the app with Ctrl+C, or run `docker compose down` if you started it with `-d`.
 
 ### What `.env` controls
 
