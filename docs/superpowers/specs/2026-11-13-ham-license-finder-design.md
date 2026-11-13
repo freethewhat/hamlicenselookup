@@ -1,7 +1,7 @@
 # Ham License Finder — Design
 
 Date: 2026-11-13
-Status: Draft for review
+Status: Approved 2026-11-13
 
 ## 1. Why this exists
 
