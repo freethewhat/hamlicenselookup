@@ -192,7 +192,9 @@ test('every response carries the security headers', async () => {
     for (const path of ['/', '/api/health', '/api/meta', '/vendor/leaflet/leaflet.css']) {
       const res = await fetch(`${base}${path}`);
       assert.equal(res.headers.get('x-content-type-options'), 'nosniff', path);
-      assert.equal(res.headers.get('referrer-policy'), 'same-origin', path);
+      // OpenStreetMap blocks tile requests without a Referer, so cross-origin
+      // requests must still send our origin (not the full URL).
+      assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin', path);
       assert.equal(
         res.headers.get('content-security-policy'),
         "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self'",
