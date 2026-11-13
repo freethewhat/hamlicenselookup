@@ -57,6 +57,7 @@ Walked the whole flow with the keyboard only: skip link, state picker, state chi
 - Focus never got stuck.
 - After each step change, focus lands on the new step's heading. With the step animation on, it arrives within 50 ms.
 - No focused control was covered by another element once the step animation finished.
+- Saved picks (issue #2, checked 2026-11-13): after a reload, the state chips and the selected list come back with working ✕ buttons. Focus starts at the top of the page as before. The "ZIP codes covered" live message shows the count once. "Clear all" still moves focus to the "Selected" heading. The restore adds no new controls, focus moves, or live regions.
 
 ### Screen reader (accessibility tree)
 

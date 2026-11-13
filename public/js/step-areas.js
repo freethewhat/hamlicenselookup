@@ -4,6 +4,7 @@ import { createMapView } from './map-view.js';
 import { createFormView } from './form-view.js';
 import { countyChipLabel } from './format.js';
 import { focusIndexAfterRemove } from './focus.js';
+import { load, save, splitSavedStates } from './saved-selection.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,6 +19,28 @@ export async function initAreas({ selection, onNext, onError }) {
   const map = createMapView({ el: $('map'), selection, loadGeo: getGeoJson, onError });
   const form = createFormView({ selection });
 
+  // ---- saved picks (kept in this browser between visits)
+  let storage = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    // blocked storage: picks are just not remembered
+  }
+  // Saved states wait here until the state list loads (it can fail on a first visit while data loads).
+  let pendingStates = [];
+  const persist = () => save(storage, { states: [...picked, ...pendingStates], items: selection.items() });
+
+  function addPendingStates() {
+    if (!states.length || !pendingStates.length) return;
+    const { known } = splitSavedStates(pendingStates, states.map((s) => s.abbr));
+    pendingStates = [];
+    const added = known.filter((abbr) => !picked.includes(abbr));
+    picked.push(...added);
+    // Always save: this also drops saved states the server no longer lists.
+    if (added.length) statesChanged();
+    else persist();
+  }
+
   // ---- state picker
   const select = $('state-add');
   // Also called again when a data update finishes after the page opened with no data.
@@ -30,6 +53,7 @@ export async function initAreas({ selection, onNext, onError }) {
     }
     select.replaceChildren(select.options[0]);
     for (const s of states) select.append(new Option(`${s.name} (${s.abbr})`, s.abbr));
+    addPendingStates();
   }
   await loadStates();
 
@@ -61,6 +85,7 @@ export async function initAreas({ selection, onNext, onError }) {
 
   async function statesChanged() {
     renderChips();
+    persist();
     $('map-hint').textContent = picked.length
       ? 'Click a shape to add or remove it.'
       : 'Pick a state to start. Then click a shape to add or remove it.';
@@ -157,6 +182,13 @@ export async function initAreas({ selection, onNext, onError }) {
   $('view-form').addEventListener('click', () => setView('form'));
   $('mode-zip').addEventListener('click', () => setMode('zip'));
   $('mode-county').addEventListener('click', () => setMode('county'));
+
+  // Put back the last visit's picks, then start saving. Saving earlier would overwrite them.
+  const saved = load(storage);
+  selection.restore(saved.items);
+  pendingStates = saved.states;
+  addPendingStates();
+  selection.onChange(persist);
 
   renderChips();
   renderSelected();
