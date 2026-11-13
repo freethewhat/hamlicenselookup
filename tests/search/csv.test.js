@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
+import { CSV_COLUMNS, csvLine, writeCsv } from '../../src/search/csv.js';
+
+async function render(rows) {
+  const out = new PassThrough();
+  const chunks = [];
+  out.on('data', (c) => chunks.push(c));
+  await writeCsv(rows, out);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+test('csv escapes and neutralizes formulas', async () => {
+  assert.equal(CSV_COLUMNS.length, 23);
+  const text = await render([
+    { call: 'K7AAA', first: '=SUM(A1)', last: 'José', street: '1 Main St, Apt 2', zip: '598011234', op_class: 'T', status: 'A', service: 'HV' },
+    { call: 'K7BBB', zip: '01003', county_name: 'Hampshire', op_class: 'G', status: 'E', prev_class: 'T', service: 'HA' },
+  ]);
+  assert.ok(text.startsWith('﻿'));
+  const lines = text.slice(1).split('\r\n');
+  assert.equal(lines[0], CSV_COLUMNS.map(([h]) => h).join(','));
+  assert.equal(lines.at(-1), '');
+  assert.ok(lines[1].includes(",'=SUM(A1),"));
+  assert.ok(lines[1].includes('"1 Main St, Apt 2"'));
+  assert.ok(lines[1].includes(',José,'));
+  assert.ok(lines[1].includes(',59801-1234,Unassigned,Technician,Active,'));
+  assert.ok(lines[1].includes(',Yes,'));
+  assert.ok(lines[2].includes(',01003,Hampshire,General,Expired,'));
+  assert.ok(lines[2].includes(',Technician,No,'));
+  assert.equal(csvLine(['=SUM(A1)', 'a"b', '-1', '@x', '\tx', '']), `'=SUM(A1),"a""b",'-1,'@x,'\tx,`);
+  assert.equal(csvLine(['x\ny']), '"x\ny"');
+});

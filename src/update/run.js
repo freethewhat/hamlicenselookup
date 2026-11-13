@@ -22,7 +22,7 @@ class HttpError extends Error {
 }
 
 // Streams a URL to disk; never holds the body in memory.
-async function download(fetchImpl, url, dest) {
+export async function download(fetchImpl, url, dest) {
   const res = await fetchImpl(url, { headers: { 'User-Agent': USER_AGENT } });
   if (!res.ok) {
     await res.body?.cancel();
