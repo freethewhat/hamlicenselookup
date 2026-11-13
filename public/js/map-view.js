@@ -1,7 +1,8 @@
 /* global L */
 // Leaflet map of ZIP or county shapes. Uses the global `L` from /vendor/leaflet/leaflet.js.
-const BASE = { color: '#35506b', weight: 1, fillColor: '#35506b', fillOpacity: 0.05 };
-const PICKED = { color: '#0b3d7a', weight: 2, fillColor: '#1f5fa8', fillOpacity: 0.55 };
+// Picked shapes get a thicker outline as well as the red fill, so the state is not shown by color alone.
+const BASE = { color: '#2b3a4a', weight: 1, fillColor: '#2b3a4a', fillOpacity: 0.05 };
+const PICKED = { color: '#ca2017', weight: 3, fillColor: '#ca2017', fillOpacity: 0.35 };
 
 export function createMapView({ el, selection, loadGeo, onError }) {
   const map = L.map(el, { preferCanvas: true }).setView([39.5, -98.35], 4);

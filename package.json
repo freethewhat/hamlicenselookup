@@ -17,6 +17,8 @@
     "setup": "node --max-old-space-size=1024 scripts/update.js auto"
   },
   "dependencies": {
+    "@fontsource/lato": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
     "better-sqlite3": "^13.1.1",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.4",

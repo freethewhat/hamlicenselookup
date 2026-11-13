@@ -3,6 +3,7 @@ import { getStates, getCounties, getZips, getGeoJson } from './api.js';
 import { createMapView } from './map-view.js';
 import { createFormView } from './form-view.js';
 import { countyChipLabel } from './format.js';
+import { focusIndexAfterRemove } from './focus.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -36,7 +37,9 @@ export async function initAreas({ selection, onNext, onError }) {
 
   function renderChips() {
     $('state-chips').replaceChildren(
-      ...picked.map((abbr) => chip(stateName(abbr), `Remove state ${stateName(abbr)}`, () => removeState(abbr))),
+      ...picked.map((abbr, n) =>
+        chip(stateName(abbr), `Remove state ${stateName(abbr)}`, () => removeAndRefocus($('state-chips'), n, () => removeState(abbr), select)),
+      ),
     );
     for (const o of select.options) o.disabled = picked.includes(o.value) && o.value !== '';
   }
@@ -86,6 +89,15 @@ export async function initAreas({ selection, onNext, onError }) {
   });
 
   // ---- selected list
+  // Removing a chip destroys its button. Keep keyboard focus nearby instead of letting it fall to <body>:
+  // the chip now in its place, else the one before, else `fallback`.
+  async function removeAndRefocus(list, index, remove, fallback) {
+    await remove();
+    const buttons = list.querySelectorAll('button');
+    const i = focusIndexAfterRemove(index, buttons.length);
+    (i >= 0 ? buttons[i] : fallback).focus();
+  }
+
   function chip(text, removeLabel, onRemove) {
     const li = document.createElement('li');
     li.append(text);
@@ -102,18 +114,25 @@ export async function initAreas({ selection, onNext, onError }) {
     const items = selection.items();
     $('selected-count').textContent = items.length ? `(${items.length})` : '';
     $('selected-list').replaceChildren(
-      ...items.map((i) => {
+      ...items.map((i, n) => {
         const text = i.type === 'county' ? countyChipLabel(i.label, i.id) : i.label;
-        return chip(text, `Remove ${text}`, () => selection.remove(i.type, i.id));
+        return chip(text, `Remove ${text}`, () => removeAndRefocus($('selected-list'), n, () => selection.remove(i.type, i.id), $('selected-title')));
       }),
     );
     const n = selection.coveredZips(countyZips).size;
     $('zip-covered').textContent = items.length ? `${n} ZIP code${n === 1 ? '' : 's'} covered` : 'Nothing picked yet.';
     $('clear-all').hidden = items.length === 0;
     $('next-1').disabled = items.length === 0;
+    $('next-1-hint').hidden = items.length > 0;
+    // A hidden hint is still read out if referenced, so only point at it while it applies.
+    if (items.length) $('next-1').removeAttribute('aria-describedby');
+    else $('next-1').setAttribute('aria-describedby', 'next-1-hint');
   }
   selection.onChange(renderSelected);
-  $('clear-all').addEventListener('click', () => selection.clear());
+  $('clear-all').addEventListener('click', () => {
+    selection.clear();
+    $('selected-title').focus(); // the button hides itself, so move focus somewhere sensible
+  });
   $('next-1').addEventListener('click', () => onNext());
 
   // ---- toggles

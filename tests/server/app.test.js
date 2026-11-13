@@ -288,3 +288,18 @@ test('an export whose client stops reading is cut off and releases its read lock
     }
   });
 });
+
+test('local font files are served and cached', async () => {
+  await withApp(fixture, {}, async (base) => {
+    for (const path of [
+      '/vendor/fonts/lato/files/lato-latin-400-normal.woff2',
+      '/vendor/fonts/lato/files/lato-latin-900-normal.woff2',
+      '/vendor/fonts/playfair-display/files/playfair-display-latin-700-normal.woff2',
+    ]) {
+      const res = await fetch(`${base}${path}`);
+      assert.equal(res.status, 200, path);
+      assert.equal(res.headers.get('content-type'), 'font/woff2');
+      assert.match(res.headers.get('cache-control'), /max-age=86400/);
+    }
+  });
+});
