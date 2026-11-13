@@ -36,7 +36,7 @@ export function createMapView({ el, selection, loadGeo, onError }) {
         style: (f) => style(f, st, layerMode),
         onEachFeature(feature, layer) {
           const item = itemFor(feature, st);
-          layer.bindTooltip(item.tip, { sticky: true });
+          layer.bindTooltip(() => document.createTextNode(item.tip), { sticky: true }); // text, never HTML
           layer.on('click', () => selection.toggle(item.type, item.id, item.label));
         },
       }),

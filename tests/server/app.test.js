@@ -186,6 +186,22 @@ test('retries a failed open even when the file inode is unchanged', async () => 
   });
 });
 
+test('every response carries the security headers', async () => {
+  await withApp(null, {}, async (base) => {
+    // (Express's own 404 page replaces the CSP with the stricter "default-src 'none'".)
+    for (const path of ['/', '/api/health', '/api/meta', '/vendor/leaflet/leaflet.css']) {
+      const res = await fetch(`${base}${path}`);
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff', path);
+      assert.equal(res.headers.get('referrer-policy'), 'same-origin', path);
+      assert.equal(
+        res.headers.get('content-security-policy'),
+        "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self'",
+        path,
+      );
+    }
+  });
+});
+
 test('public files revalidate; vendor files cache', async () => {
   await withApp(fixture, {}, async (base) => {
     for (const path of ['/', '/js/main.js']) {

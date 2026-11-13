@@ -2,6 +2,7 @@
 import { getStates, getCounties, getZips, getGeoJson } from './api.js';
 import { createMapView } from './map-view.js';
 import { createFormView } from './form-view.js';
+import { countyChipLabel } from './format.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -101,9 +102,10 @@ export async function initAreas({ selection, onNext, onError }) {
     const items = selection.items();
     $('selected-count').textContent = items.length ? `(${items.length})` : '';
     $('selected-list').replaceChildren(
-      ...items.map((i) =>
-        chip(i.type === 'county' ? `${i.label} county` : i.label, `Remove ${i.label}`, () => selection.remove(i.type, i.id)),
-      ),
+      ...items.map((i) => {
+        const text = i.type === 'county' ? countyChipLabel(i.label, i.id) : i.label;
+        return chip(text, `Remove ${text}`, () => selection.remove(i.type, i.id));
+      }),
     );
     const n = selection.coveredZips(countyZips).size;
     $('zip-covered').textContent = items.length ? `${n} ZIP code${n === 1 ? '' : 's'} covered` : 'Nothing picked yet.';

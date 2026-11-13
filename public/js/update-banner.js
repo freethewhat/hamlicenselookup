@@ -33,12 +33,13 @@ export function initUpdateBanner({ onDataReady }) {
     if (finished) doneSince = Date.now();
     else if (status.state !== 'done') doneSince = null;
     let view = statusView(status, new Date(), dataAsOf, doneSince);
-    if (status.state === 'done' && view.visible && (finished || dataAsOf === null)) {
+    const wantsDate = status.state === 'failed' || (status.state === 'done' && view.visible);
+    if (wantsDate && (finished || dataAsOf === null)) {
       try {
         dataAsOf = (await getMeta()).dataAsOf;
         view = statusView(status, new Date(), dataAsOf, doneSince);
       } catch {
-        // meta not available; the text falls back to "Data updated"
+        // meta not available; the text leaves out the date
       }
     }
     root.hidden = !view.visible;

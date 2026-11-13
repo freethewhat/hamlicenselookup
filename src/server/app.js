@@ -13,6 +13,13 @@ const MAX_ZIPS = 5000;
 const PREVIEW_ROWS = 100;
 const STALE_DAYS = 10;
 const DAY_MS = 86_400_000;
+// Map tiles come from OpenStreetMap; Leaflet sets inline styles on map elements.
+const CSP = [
+  "default-src 'self'",
+  "img-src 'self' data: https://tile.openstreetmap.org",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+].join('; ');
 
 class HttpError extends Error {
   constructor(status, body) {
@@ -68,6 +75,10 @@ export function createApp({
   const app = express();
   app.locals.handle = handle;
   app.set('trust proxy', 1);
+  app.use((req, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'Content-Security-Policy': CSP });
+    next();
+  });
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 

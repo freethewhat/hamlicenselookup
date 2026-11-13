@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { displayName, displayAddress, displayZip, rowCells } from '../../public/js/format.js';
+import { displayName, displayAddress, displayZip, rowCells, countyChipLabel } from '../../public/js/format.js';
 
 test('individual name is First MI Last Suffix, not entity_name', () => {
   assert.equal(displayName({ first: 'ALPHA', mi: 'Q', last: 'TESTER', suffix: 'JR', entity_name: 'TESTER, ALPHA Q' }), 'ALPHA Q TESTER JR');
@@ -27,4 +27,13 @@ test('row cells map class label and Unassigned county', () => {
   assert.deepEqual(cells, ['K7AAA', 'A T', 's', 'Missoula', '59801', 'Unassigned', 'Extra', 'First license']);
   assert.equal(rowCells({ op_class: 'T', county_name: 'Missoula' })[5], 'Missoula');
   assert.equal(rowCells({ op_class: 'T' })[6], 'Technician');
+});
+
+test('county chip label names the county once, with the right word', () => {
+  assert.equal(countyChipLabel('Missoula, MT', '30063'), 'Missoula County, MT');
+  assert.equal(countyChipLabel('Acadia, LA', '22001'), 'Acadia Parish, LA');
+  assert.equal(countyChipLabel('Juneau, AK', '02110'), 'Juneau, AK');
+  assert.equal(countyChipLabel('Richmond, VA', '51760'), 'Richmond city, VA'); // independent city
+  assert.equal(countyChipLabel('Richmond, VA', '51159'), 'Richmond County, VA');
+  assert.equal(countyChipLabel('Ponce, PR', '72113'), 'Ponce, PR');
 });

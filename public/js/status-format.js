@@ -29,13 +29,17 @@ export function statusView(status, now, dataAsOf = null, doneSince = null) {
       const date = formatDate(dataAsOf);
       return { visible: true, tone: 'success', text: date ? `Data updated to ${date}` : 'Data updated', percent: 100 };
     }
-    case 'failed':
+    case 'failed': {
+      // The technical error stays in the status file and server log.
+      const date = formatDate(dataAsOf);
+      const shown = date ? ` Showing data as of ${date}.` : '';
       return {
         visible: true,
-        tone: 'error',
-        text: `Data update failed: ${status.error}. Showing the previous data.`,
+        tone: 'warn',
+        text: `The last data update failed.${shown} It will retry automatically.`,
         percent: null,
       };
+    }
     case 'interrupted':
       return {
         visible: true,

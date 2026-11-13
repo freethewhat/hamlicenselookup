@@ -48,12 +48,15 @@ test('done older than 10 s is not visible', () => {
   assert.equal(statusView({ state: 'done', updatedAt: '2026-11-13T11:59:59Z' }, NOW, '2026-11-08').visible, false);
 });
 
-test('failed shows the error and that old data stays', () => {
-  const v = statusView({ state: 'failed', error: 'Download failed with HTTP 500' }, NOW);
-  assert.equal(v.visible, true);
-  assert.equal(v.tone, 'error');
-  assert.equal(v.text, 'Data update failed: Download failed with HTTP 500. Showing the previous data.');
-  assert.equal(v.percent, null);
+test('failed is a plain warning with the data date and no technical error', () => {
+  const failed = { state: 'failed', error: 'Download failed with HTTP 500 for https://data.fcc.gov/x.zip' };
+  assert.deepEqual(statusView(failed, NOW, '2026-11-08'), {
+    visible: true,
+    tone: 'warn',
+    text: 'The last data update failed. Showing data as of Nov 8, 2026. It will retry automatically.',
+    percent: null,
+  });
+  assert.equal(statusView(failed, NOW).text, 'The last data update failed. It will retry automatically.');
 });
 
 test('interrupted explains the retry', () => {

@@ -16,6 +16,19 @@ export function displayZip(r) {
   return /^\d{9}$/.test(z) ? `${z.slice(0, 5)}-${z.slice(5)}` : z;
 }
 
+// Chip text for a picked county. label is "Name, ST" (map data has no county-type word).
+// Louisiana has parishes; Alaska boroughs and Puerto Rico municipios keep the plain name;
+// county codes 500 and up are independent cities (Richmond city, VA vs Richmond County, VA).
+export function countyChipLabel(label, geoid) {
+  const m = /^(.*), ([A-Z]{2})$/.exec(label ?? '');
+  if (!m) return label ?? '';
+  const [, name, st] = m;
+  if (st === 'LA') return `${name} Parish, ${st}`;
+  if (st === 'AK' || st === 'PR') return `${name}, ${st}`;
+  if (Number(String(geoid).slice(2)) >= 500) return `${name} city, ${st}`;
+  return `${name} County, ${st}`;
+}
+
 // The eight preview cells, in column order.
 export function rowCells(r) {
   return [
