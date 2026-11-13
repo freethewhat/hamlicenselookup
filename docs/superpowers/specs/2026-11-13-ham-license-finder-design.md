@@ -241,6 +241,27 @@ container (`docker compose run --rm app npm run update:weekly` /
   (install Docker, firewall, swap, Caddy container, app folder, systemd
   timers, HTTPS via Caddy).
 
+**Deploy safety (decided 2026-11-13):**
+
+1. **Rollback.** Each image is tagged with its git commit. The server
+   runs a specific tag, not "latest". If the health check fails after a
+   deploy, the deploy script starts the last good tag again and the
+   deploy job fails.
+2. **Database versions.** The license and geo databases store a schema
+   version. If new code needs a different version, the app answers
+   "Data is being updated, try again soon" instead of breaking, and the
+   deploy starts a data rebuild in the background. Daily updates refuse
+   to run on an old schema.
+3. **Disk cleanup.** After a good deploy, old images of this app are
+   deleted, keeping the current and the previous one (for rollback).
+4. **Protected `main`.** GitHub branch protection: changes reach `main`
+   only through a pull request that passes the tests.
+5. **One build.** The image is built once per change; the test and
+   deploy steps share a build cache.
+
+A deploy causes about 5 seconds of downtime while the container
+restarts. That is acceptable for this tool.
+
 **Hosting provider (decided):** a **DigitalOcean** Basic Droplet with
 **2 GB RAM** (about $12/month, 50 GB disk, Ubuntu LTS), in a US region
 (builder picks; a West Coast region such as SFO is closest to Montana).
