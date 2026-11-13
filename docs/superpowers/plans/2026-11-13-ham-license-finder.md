@@ -511,3 +511,41 @@ Note in README: on Linux, create `data/` first and `chown 1000:1000 data` if you
 - [ ] **Step 4b: Test the deploy script locally** against the local Docker daemon (temporarily point `deploy.sh`'s folder at a scratch copy and use locally built tags `aaaaaaa` / `bbbbbbb`): (a) deploy `aaaaaaa` → healthy, `last-good-tag` = `aaaaaaa`; (b) deploy `bbbbbbb` built with a `CMD` that exits 1 → script exits 1, prints `Rolled back to aaaaaaa`, container healthy on `aaaaaaa`; (c) after a third good deploy, only the current and previous tags remain in `docker image ls`. Record the results in the commit message.
 - [ ] **Step 5: Commit** `git add Dockerfile .dockerignore docker-compose.yml .env.example deploy .github README.md package*.json && git commit -m "ci: Docker image, local compose, server setup, and GHCR deploy"`
 - [ ] **Step 6: Hand off** to the owner with `deploy/README.md` steps 1–11 (they create the GitHub repo, Droplet, DNS, and secrets).
+
+---
+
+### Task 12: Automatic update on start, with progress status and banner
+
+Spec: §11d.
+
+**Files:**
+- Create: `src/update/status.js`, `public/js/update-banner.js`, `public/js/status-format.js`
+- Modify: `src/update/run.js` (add `runAuto`, progress hooks in `download`/`runWeekly`/`runDaily`), `src/db/load-weekly.js` and `src/db/apply-daily.js` (optional `onProgress`), `src/geo/build.js` (optional progress), `scripts/update.js` (`auto` mode), `package.json` (`update:auto`; `setup` → `node --max-old-space-size=<as set in Task 11> scripts/update.js auto`), `src/server/app.js` (`GET /api/status`), `src/server/index.js` (spawn on start), `public/index.html`, `public/css/app.css`, `public/js/main.js`, `public/js/step-results.js`, `deploy/ham-finder/docker-compose.yml` and `docker-compose.yml` (memory for in-container auto runs), `README.md`, `deploy/README.md`, `.env.example`
+- Test: `tests/update/status.test.js`, `tests/update/auto.test.js`, `tests/server/app.test.js`, `tests/public/status-format.test.js`
+
+**Interfaces:**
+- Consumes: `runWeekly`, `runDaily`, `acquireUpdateLock`, `download` (run.js); `buildGeo` (geo/build.js); `checkSchemas(dataDir)` (db/handle.js); meta `weekly_file_date`, `data_as_of`.
+- Produces:
+  - Status file `DATA_DIR/update-status.json` (written atomically: tmp file + rename):
+    `{state: 'running'|'done'|'failed', job: 'auto'|'weekly'|'daily'|'geo', step: 'geo'|'download'|'import'|'index'|'classify'|'swap'|'daily'|null, stepLabel: string, done: number|null, total: number|null, unit: 'bytes'|'items'|null, percent: number|null, startedAt: ISO, updatedAt: ISO, message: string|null, error: string|null}`
+  - `createStatusWriter(dataDir, job, {now?, throttleMs = 500}) -> {step(step, stepLabel, {total?, unit?}), progress(done), finish(message), fail(error)}` — `step`/`finish`/`fail` write immediately; `progress` writes at most every `throttleMs`; `percent = round(100*done/total)` when total is known.
+  - `readStatus(dataDir, now = new Date()) -> Status|{state:'idle'}` — a `running` status whose `updatedAt` is more than 120 s old is returned with `state: 'interrupted'`.
+  - Optional `onProgress(step, done, total)` callback on `loadWeekly(zip, out, {states, onProgress})`, `applyDaily(zip, db, {onProgress})`, `buildGeo({dataDir, fetchImpl, onProgress})`, `download(url, dest, {fetchImpl, onProgress})` (bytes from `Content-Length`; `total` null when absent). Import progress = uncompressed bytes read of each `.dat` entry over the entry's `uncompressedSize`; index/classify progress = rows processed over license count. Runners wire these into one status writer. Overall `percent` is per step, not a weighted total.
+  - `runAuto({dataDir, fetchImpl?, now?, states?}) -> Promise<{actions: string[]}>` — under the update lock: if `checkSchemas(dataDir).geo !== 'ok'` → buildGeo (`'geo'`); if licenses status ≠ 'ok' or `weekly_file_date` is more than 7 days before `now` → runWeekly (`'weekly'`); then runDaily (`'daily'`). If the lock is busy, return `{actions: []}` and log `Another update is running; skipping start-up update.` (exit code 0 from the CLI). The inner runs must not try to re-acquire the lock they already hold (pass a flag or restructure so the lock is taken once).
+  - CLI: `node scripts/update.js auto`; npm `update:auto`. `setup` runs `auto`.
+  - `GET /api/status` → `readStatus(dataDir)`; registered before the data gate (works with no data) with its own generous rate limit (≥ 120/min/IP; the page polls every 2 s).
+  - `src/server/index.js`: after `listen`, unless `process.env.AUTO_UPDATE === '0'`, spawn `process.execPath [same --max-old-space-size flag as setup] scripts/update.js auto` with `stdio: 'inherit'`, same env; log its exit code; on SIGTERM, kill the child (SIGTERM) before exiting. No automatic re-spawn.
+  - Front end: `status-format.js` (DOM-free): `statusView(status, now) -> {visible: boolean, tone: 'info'|'success'|'error', text: string, percent: number|null}`. Texts: running → `Updating license data: <stepLabel>[, <percent>%][ (<done MB> of <total MB> MB)]`; done within the last 10 s → `Data updated to <Mon D, YYYY>` using meta `dataAsOf` passed in; failed → `Data update failed: <error>. Showing the previous data.`; interrupted → `The last data update stopped before finishing. It will retry on the next start or schedule.`; idle/old done → not visible.
+  - `update-banner.js`: renders a banner at the top of `<main>` with a `<progress max="100">` (indeterminate when percent is null) and text in an `aria-live="polite"` region; polls `/api/status` every 2 s while `running`, every 60 s otherwise; on running→done it re-fetches `/api/meta` (footer "Data as of") and clears the "Data not loaded yet" state. While status is `running` and the API answers 503 "Data not loaded yet", step 3 shows "License data is loading — see the progress above." instead of the error.
+  - Memory: in-container auto runs share the app container's limit. Set the app service `mem_limit` (server compose) to cover the server + the measured peak of the largest job from Task 11's measurement (default `1800m` if Task 11 measured ≤ 1.2 GB for build:geo/weekly); keep the Node heap flag consistent.
+
+- [ ] **Step 1: Write failing tests:**
+  - `status.test.js`: writer creates the file atomically (no partial reads: file always parses); `progress` throttles (10 calls within 100 ms → ≤ 2 writes with an injected clock); `percent` computed; `finish`/`fail` set state; `readStatus` → `idle` when no file, `interrupted` when running and `updatedAt` 121 s old.
+  - `auto.test.js` (fake fetch + fixture zips, as in tests/update/run.test.js): empty data dir → actions `['geo','weekly','daily']` (geo build injectable/fake so no network) and a final status `done`; fresh data (weekly 2 days old) → `['daily']`; weekly 8 days old → `['weekly','daily']`; licenses schema_version 0 → includes `'weekly'`; lock held by a spawned child → `{actions: []}`, no files touched; a failing weekly download → status `failed` with the error and the old licenses.db intact.
+  - `app.test.js`: `GET /api/status` returns `{state:'idle'}` with an empty data dir (no 503) and returns the file's content when present.
+  - `status-format.test.js`: each state's text exactly as above, MB formatting uses decimal megabytes, `Math.round(bytes / 1e6)` (198117503 bytes → `198`), percent null → no `%` part, done older than 10 s → not visible.
+- [ ] **Step 2: Run** `npm test` — Expected: FAIL.
+- [ ] **Step 3: Implement** the interfaces above; update READMEs: local quick start becomes `docker compose up` (first start downloads ~280 MB and builds data; watch the banner), mention `AUTO_UPDATE=0`; `.env.example` documents `AUTO_UPDATE`.
+- [ ] **Step 4: Run** `npm test && npm run lint` — Expected: PASS.
+- [ ] **Step 5: Real check** with a scratch data dir (NOT `./data`): `DATA_DIR=./data-scratch LOAD_STATES=MT PORT=3199 npm start`, poll `curl -s localhost:3199/api/status` every few seconds and record the sequence of steps/percents until `done`; then `/api/meta` shows data. Stop the server, delete `./data-scratch`. Expected: geo → download (bytes rising) → import → index → classify → swap → daily → done.
+- [ ] **Step 6: Commit** `git commit -m "feat: automatic update on start with progress status and banner"` (after `git add`).

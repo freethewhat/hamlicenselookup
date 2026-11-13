@@ -6,3 +6,4 @@ data-scratch
 docs
 tests
 .github
+.env

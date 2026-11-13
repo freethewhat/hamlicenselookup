@@ -9,6 +9,16 @@ services:
     restart: unless-stopped
     mem_limit: 1g
 
+  # One-shot jobs (updates, first load). Not started by `up`; run with
+  # `docker compose run --rm jobs ...`. More memory than the web container:
+  # build:geo measured at a 665 MiB peak with its heap capped at 1024 MB.
+  jobs:
+    image: __IMAGE__:${IMAGE_TAG}
+    profiles: ["jobs"]
+    volumes:
+      - ./data:/data
+    mem_limit: 1500m
+
 networks:
   web:
     external: true

@@ -302,6 +302,42 @@ on this Droplet later. So:
   empty and loads the whole US.
 - Tests can also run without Docker (`npm test`) for speed.
 
+## 11d. Automatic updates on start, with visible progress (decided 2026-11-13)
+
+**Why:** a new developer should only need `docker compose up`, and a
+server or container that was down for weeks should catch up by itself.
+People must always see what the data update is doing.
+
+**On every app start** (local and server), unless `AUTO_UPDATE=0`, the
+app starts the update in a separate background process (the website
+keeps working while it runs). It decides:
+
+- map data missing or from an old version → build the map data;
+- license data missing, from an old version, or its Sunday file older
+  than 7 days → full weekly load;
+- then always apply the newest daily files.
+
+If another update holds the update lock (for example the server timer),
+the start-up run exits quietly; the running one keeps reporting. The
+one-time setup command does the same steps, so it now also applies the
+daily files.
+
+**Progress:** every update run (start-up, timer, or by hand) writes its
+progress to a status file in the data folder: which job, which step
+(downloading, importing, building indexes, finding first licenses,
+switching to the new data, building map data), how far (megabytes for
+downloads, share of the file for imports), when it started, and any
+error. A run that stopped reporting for 2 minutes counts as
+interrupted.
+
+**On the page:** a banner with a progress bar and plain text, for
+example "Updating license data: Downloading FCC file, 45% (90 of
+198 MB)". It is announced to screen readers. While no data exists yet,
+the page shows this progress instead of "Data not loaded yet". When an
+update finishes, the banner says "Data updated to <date>" for a moment
+and the page uses the new data. A failed update shows its error; the
+old data stays in use.
+
 ## 12. Load and limits
 
 - Searches hit our own database only. No FCC rate limits apply at

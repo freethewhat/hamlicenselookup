@@ -12,7 +12,7 @@
     "start": "node src/server/index.js",
     "update:weekly": "node scripts/update.js weekly",
     "update:daily": "node scripts/update.js daily",
-    "build:geo": "node --max-old-space-size=3072 scripts/build-geo.js",
+    "build:geo": "node --max-old-space-size=1024 scripts/build-geo.js",
     "setup": "npm run build:geo && npm run update:weekly"
   },
   "dependencies": {
