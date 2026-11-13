@@ -109,8 +109,8 @@ them as "unassigned" rather than drop them silently.
 
 ## 7. "First license" filter
 
-**Decided:** the main "new" filter means **the person's first ever ham
-license**, granted inside a date range the user picks (default: last 12
+**Decided:** the **"First license only"** checkbox (step 2 of the UI)
+shows people whose **first ever ham license** was granted inside a date range the user picks (default: last 12
 months). It must exclude renewals, upgrades, and vanity call sign
 changes.
 
