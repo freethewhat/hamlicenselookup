@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -12,9 +13,10 @@ import { en, hd, am, hs } from '../helpers/fcc-lines.js';
 
 const counts = (day) => [`File Creation Date: ${day}`];
 const SUN = 'Sun Nov  8 09:08:58 EST 2026';
+const NEXT_SUN = 'Sun Nov 15 09:08:58 EST 2026';
 
-function weekly(n) {
-  const lines = { EN: [], HD: [], AM: [], HS: [], counts: counts(SUN) };
+function weekly(n, fileDay = SUN) {
+  const lines = { EN: [], HD: [], AM: [], HS: [], counts: counts(fileDay) };
   for (let i = 1; i <= n; i++) {
     const call = `K7A${String.fromCharCode(64 + i)}A`;
     lines.EN.push(en(i, 'Tester', `Person${i}`, { frn: String(i).padStart(10, '0') }));
@@ -90,9 +92,8 @@ test('first weekly creates licenses.db, sends a User-Agent and leaves tmp empty'
 test('after the swap licenses.db is in delete journal mode with no -wal/-shm files', async () => {
   await withDir(async (dir) => {
     const data = join(dir, 'data');
-    const fetchImpl = fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(3)) });
-    await runWeekly({ dataDir: data, fetchImpl });
-    await runWeekly({ dataDir: data, fetchImpl });
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(3)) }) });
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w2', weekly(3, NEXT_SUN)) }) });
     const db = new Database(join(data, 'licenses.db'), { readonly: true });
     try {
       assert.equal(db.pragma('journal_mode', { simple: true }), 'delete');
@@ -125,7 +126,7 @@ test('weekly with a big drop in rows throws, keeps the old db and empties tmp', 
     const data = join(dir, 'data');
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'a', weekly(5)) }) });
     await assert.rejects(
-      runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'b', weekly(2)) }) }),
+      runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'b', weekly(2, NEXT_SUN)) }) }),
       /License count dropped from 5 to 2; keeping old data/,
     );
     assert.equal(meta(join(data, 'licenses.db')).license_count, '5');
@@ -137,15 +138,38 @@ test('weekly swaps in a new db of similar size and skips the check when load_sta
   await withDir(async (dir) => {
     const data = join(dir, 'data');
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'a', weekly(5)) }) });
-    // Same states, 5 -> 5: swaps.
-    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'b', weekly(5)) }) });
-    // Different states: a count of 0 would fail the ratio check, but it is skipped.
+    // Same states, newer file, 5 -> 5: swaps.
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'b', weekly(5, NEXT_SUN)) }) });
+    assert.equal(meta(join(data, 'licenses.db')).weekly_file_date, '2026-11-15');
+    // Different states, same file date: loads anyway (not "already up to date"), and a
+    // count of 0 would fail the ratio check, but that check is skipped.
     const res = await runWeekly({
       dataDir: data, states: ['OR'],
-      fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'c', weekly(5)) }),
+      fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'c', weekly(5, NEXT_SUN)) }),
     });
     assert.equal(res.licenseCount, 0);
     assert.equal(meta(join(data, 'licenses.db')).load_states, 'OR');
+  });
+});
+
+test('weekly skips the swap when the file is not newer than the live data', async () => {
+  await withDir(async (dir) => {
+    const data = join(dir, 'data');
+    const live = join(data, 'licenses.db');
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'a', weekly(3, NEXT_SUN)) }) });
+    const before = statSync(live).ino;
+    for (const [name, fileDay] of [['same', NEXT_SUN], ['older', SUN]]) {
+      const res = await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, name, weekly(5, fileDay)) }) });
+      assert.deepEqual(res, { licenseCount: 3, fileDate: '2026-11-15', skipped: true });
+      const status = JSON.parse(await readFile(join(data, 'update-status.json'), 'utf8'));
+      assert.equal(status.state, 'done');
+      assert.equal(status.message, 'Already up to date (weekly file of 2026-11-15 is loaded)');
+    }
+    assert.equal(statSync(live).ino, before); // old file kept
+    const m = meta(live);
+    assert.equal(m.license_count, '3');
+    assert.equal(m.data_as_of, '2026-11-15'); // never moves backwards
+    assert.deepEqual(await readdir(join(data, 'tmp')), []);
   });
 });
 
@@ -180,6 +204,18 @@ test('runDaily applies newer dailies in date order and skips one older than the 
     assert.equal(m.daily_applied_through, '2026-11-11');
     assert.equal(m.license_count, '4');
     assert.deepEqual(await readdir(join(data, 'tmp')), []);
+  });
+});
+
+test('runDaily warns when every daily file is missing', async () => {
+  await withDir(async (dir) => {
+    const data = join(dir, 'data');
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(2)) }) });
+    const res = await runDaily({ dataDir: data, fetchImpl: fakeFetch({}) });
+    const expected = 'All 7 daily files were missing (HTTP 404); no daily changes applied';
+    assert.deepEqual(res, { applied: [], warning: expected }); // scripts/update.js logs the warning
+    const status = JSON.parse(await readFile(join(data, 'update-status.json'), 'utf8'));
+    assert.equal(status.message, `Applied 0 daily file(s). ${expected}`);
   });
 });
 
@@ -247,7 +283,7 @@ test('a lock held by another process blocks runDaily; killing it releases the lo
       await killChild(child);
     }
     // The kernel released the lock; no manual cleanup.
-    assert.deepEqual(await runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }), { applied: [] });
+    assert.deepEqual((await runDaily({ dataDir: data, fetchImpl: fakeFetch({}) })).applied, []);
   });
 });
 

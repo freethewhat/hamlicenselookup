@@ -122,10 +122,37 @@ export async function runLockedJob(dataDir, job, fn, describe = () => null) {
   }
 }
 
+export const describeWeekly = (r) => (r.skipped
+  ? `Already up to date (weekly file of ${r.fileDate} is loaded)`
+  : `Loaded ${r.licenseCount} licenses as of ${r.fileDate}`);
+
+const describeDaily = (r) => `Applied ${r.applied.length} daily file(s)${r.warning ? `. ${r.warning}` : ''}`;
+
 /** Downloads the weekly file, builds a new db and swaps it in only if it looks sane. */
 export async function runWeekly(opts) {
-  return runLockedJob(opts.dataDir, 'weekly', (status) => runWeeklyUnlocked({ ...opts, status }),
-    (r) => `Loaded ${r.licenseCount} licenses as of ${r.fileDate}`);
+  return runLockedJob(opts.dataDir, 'weekly', (status) => runWeeklyUnlocked({ ...opts, status }), describeWeekly);
+}
+
+async function zipFileDate(zipPath) {
+  const entries = await readZipEntries(zipPath, ['counts']);
+  try {
+    if (!entries.has('counts')) return null; // loadWeekly reports the missing file
+    return parseCountsDate(await readText(await entries.get('counts')()));
+  } finally {
+    entries.close();
+  }
+}
+
+// The live weekly load, when it has the current schema and the same states; else null.
+function liveWeekly(liveDb, states) {
+  if (!existsSync(liveDb)) return null;
+  try {
+    if (Number(readMeta(liveDb, 'schema_version')) !== LICENSE_SCHEMA_VERSION) return null;
+    if ((readMeta(liveDb, 'load_states') ?? '') !== states.join(',')) return null;
+    return { fileDate: readMeta(liveDb, 'weekly_file_date'), licenseCount: Number(readMeta(liveDb, 'license_count')) };
+  } catch {
+    return null;
+  }
 }
 
 /** Like runWeekly but the caller already holds the update lock. */
@@ -139,6 +166,13 @@ export async function runWeeklyUnlocked({
     const newDb = join(tmp, 'licenses-new.db');
     const liveDb = join(dataDir, 'licenses.db');
     await download(fetchImpl, url, zipPath, { onProgress: (d, t) => progress('download', d, t) });
+    // FCC can serve the same Sunday file for days. Reloading it is wasted work and, after
+    // dailies were applied, would move data_as_of backwards, so keep the live data.
+    const live = liveWeekly(liveDb, states);
+    const fileDate = await zipFileDate(zipPath);
+    if (live?.fileDate && fileDate && fileDate <= live.fileDate) {
+      return { licenseCount: live.licenseCount, fileDate: live.fileDate, skipped: true };
+    }
     const result = await loadWeekly(zipPath, newDb, { states, onProgress: progress });
 
     if (existsSync(liveDb)) {
@@ -166,8 +200,7 @@ export async function runWeeklyUnlocked({
 
 /** Downloads the seven daily files and applies them oldest first. */
 export async function runDaily(opts) {
-  return runLockedJob(opts.dataDir, 'daily', (status) => runDailyUnlocked({ ...opts, status }),
-    (r) => `Applied ${r.applied.length} daily file(s)`);
+  return runLockedJob(opts.dataDir, 'daily', (status) => runDailyUnlocked({ ...opts, status }), describeDaily);
 }
 
 /** Like runDaily but the caller already holds the update lock. */
@@ -182,6 +215,7 @@ export async function runDailyUnlocked({
   const tmp = await prepareTmp(dataDir);
   try {
     const files = [];
+    let missing = 0;
     for (const [i, day] of DAILY_DAYS.entries()) {
       const zipPath = join(tmp, `l_am_${day}.zip`);
       const label = `Downloading daily file (${i + 1} of ${DAILY_DAYS.length})`;
@@ -189,7 +223,10 @@ export async function runDailyUnlocked({
         await download(fetchImpl, `${baseUrl}/l_am_${day}.zip`, zipPath,
           { onProgress: (d, t) => progress('download', d, t, label) });
       } catch (err) {
-        if (err instanceof HttpError && err.status === 404) continue;
+        if (err instanceof HttpError && err.status === 404) {
+          missing++;
+          continue;
+        }
         throw err;
       }
       const entries = await readZipEntries(zipPath, ['counts']);
@@ -207,6 +244,10 @@ export async function runDailyUnlocked({
       const label = `Applying daily update (${i + 1} of ${files.length})`;
       const res = await applyDaily(f.zipPath, liveDb, { onProgress: (_s, d, t) => progress('daily', d, t, label) });
       if (!res.skipped) applied.push(res.fileDate);
+    }
+    // FCC normally publishes all seven; none at all points at a moved URL or an outage.
+    if (missing === DAILY_DAYS.length) {
+      return { applied, warning: `All ${missing} daily files were missing (HTTP 404); no daily changes applied` };
     }
     return { applied };
   } finally {
@@ -227,6 +268,7 @@ export async function runAuto({
   dataDir, fetchImpl = fetch, now = new Date(), states = [], geoBuilder = buildGeoUnlocked,
 }) {
   const actions = [];
+  const notes = [];
   try {
     await runLockedJob(dataDir, 'auto', async (status) => {
       const schemas = checkSchemas(dataDir);
@@ -238,15 +280,17 @@ export async function runAuto({
       const age = now - Date.parse(weeklyDate ?? '');
       if (!(age <= WEEKLY_MAX_AGE_DAYS * DAY_MS)) {
         actions.push('weekly');
-        await runWeeklyUnlocked({ dataDir, fetchImpl, states, status });
+        const weekly = await runWeeklyUnlocked({ dataDir, fetchImpl, states, status });
+        if (weekly.skipped) notes.push(describeWeekly(weekly));
       }
       actions.push('daily');
-      await runDailyUnlocked({ dataDir, fetchImpl, status });
-    }, () => `Update finished: ${actions.join(', ')}`);
+      const daily = await runDailyUnlocked({ dataDir, fetchImpl, status });
+      if (daily.warning) notes.push(daily.warning);
+    }, () => [`Update finished: ${actions.join(', ')}`, ...notes].join('. '));
   } catch (err) {
     if (err.code !== 'UPDATE_LOCKED') throw err;
     console.log('Another update is running; skipping start-up update.');
     return { actions: [] };
   }
-  return { actions };
+  return notes.length ? { actions, notes } : { actions };
 }

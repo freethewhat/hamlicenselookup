@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { runWeekly, runDaily, runAuto } from '../src/update/run.js';
+import { runWeekly, runDaily, runAuto, describeWeekly } from '../src/update/run.js';
 
 const mode = process.argv[2];
 const dataDir = resolve(process.env.DATA_DIR || './data');
@@ -9,13 +9,15 @@ const states = (process.env.LOAD_STATES ?? '')
 try {
   if (mode === 'weekly') {
     const r = await runWeekly({ dataDir, states });
-    console.log(`weekly: loaded ${r.licenseCount} licenses as of ${r.fileDate}`);
+    console.log(`weekly: ${describeWeekly(r)}`);
   } else if (mode === 'daily') {
     const r = await runDaily({ dataDir });
     console.log(`daily: applied ${r.applied.length} file(s)${r.applied.length ? `: ${r.applied.join(', ')}` : ''}`);
+    if (r.warning) console.warn(`daily: warning: ${r.warning}`);
   } else if (mode === 'auto') {
     const r = await runAuto({ dataDir, states });
     if (r.actions.length) console.log(`auto: ran ${r.actions.join(', ')}`);
+    for (const note of r.notes ?? []) console.warn(`auto: ${note}`);
   } else {
     throw new Error('Usage: update.js weekly|daily|auto');
   }

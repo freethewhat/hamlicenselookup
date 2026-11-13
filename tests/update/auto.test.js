@@ -17,8 +17,8 @@ import { en, hd, am, hs } from '../helpers/fcc-lines.js';
 const SUN = 'Sun Nov  8 09:08:58 EST 2026'; // weekly file date 2026-11-08
 const day = (iso) => new Date(`${iso}T12:00:00Z`);
 
-function weekly(n) {
-  const lines = { EN: [], HD: [], AM: [], HS: [], counts: [`File Creation Date: ${SUN}`] };
+function weekly(n, fileDay = SUN) {
+  const lines = { EN: [], HD: [], AM: [], HS: [], counts: [`File Creation Date: ${fileDay}`] };
   for (let i = 1; i <= n; i++) {
     const call = `K7A${String.fromCharCode(64 + i)}A`;
     lines.EN.push(en(i, 'Tester', `Person${i}`, { frn: String(i).padStart(10, '0') }));
@@ -111,7 +111,7 @@ test('weekly file 8 days old runs weekly then daily', async () => {
     await seed(dir, data);
     const res = await runAuto({
       dataDir: data,
-      fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w2', weekly(4)) }),
+      fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w2', weekly(4, 'Sun Nov 15 09:08:58 EST 2026')) }),
       now: day('2026-11-16'),
       geoBuilder: fakeGeo([]),
     });
