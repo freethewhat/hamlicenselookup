@@ -42,18 +42,19 @@ test('buildGeoDb picks the largest-land county and adds geonames-only zips', asy
 
 const exists = (p) => access(p).then(() => true, () => false);
 
-test('swapGeo restores the original geo.db and geo/ when a rename fails', async () => {
+for (const failAt of [1, 2, 3, 4]) {
+test(`swapGeo restores the original geo.db and geo/ when rename ${failAt} fails`, async () => {
   const dir = await mkdtemp(join(tmpdir(), 'swap-'));
   try {
     await mkdir(join(dir, 'geo', 'MT'), { recursive: true });
     await writeFile(join(dir, 'geo', 'MT', 'zips.geojson'), 'old');
     await writeFile(join(dir, 'geo.db'), 'old-db');
-    await mkdir(join(dir, 'new-geo'));
+    await mkdir(join(dir, 'new-geo'), { recursive: true });
     await writeFile(join(dir, 'new-geo', 'x'), 'new');
     await writeFile(join(dir, 'new.db'), 'new-db');
     let calls = 0;
     const flaky = (a, b) => {
-      if (++calls === 4) throw new Error('disk full');
+      if (++calls === failAt) throw new Error('disk full');
       return rename(a, b);
     };
     await assert.rejects(
@@ -63,8 +64,9 @@ test('swapGeo restores the original geo.db and geo/ when a rename fails', async 
     assert.equal(await readFile(join(dir, 'geo.db'), 'utf8'), 'old-db');
     assert.equal(await readFile(join(dir, 'geo', 'MT', 'zips.geojson'), 'utf8'), 'old');
     assert.equal(await exists(join(dir, 'geo.db.old')), false);
+    assert.equal(await exists(join(dir, 'geo.old')), false);
 
-    await mkdir(join(dir, 'new-geo'));
+    await mkdir(join(dir, 'new-geo'), { recursive: true });
     await writeFile(join(dir, 'new-geo', 'x'), 'new');
     await writeFile(join(dir, 'new.db'), 'new-db');
     await swapGeo({ dataDir: dir, newGeoDir: join(dir, 'new-geo'), newDbPath: join(dir, 'new.db') });
@@ -75,6 +77,7 @@ test('swapGeo restores the original geo.db and geo/ when a rename fails', async 
     await rm(dir, { recursive: true, force: true });
   }
 });
+}
 
 test('buildGeo refuses to run while the update lock is held and leaves tmp alone', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'lock-'));

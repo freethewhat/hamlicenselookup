@@ -144,7 +144,8 @@ async function placeStateFiles(srcDir, geoDir, name) {
 export async function swapGeo({ dataDir, newGeoDir, newDbPath, rename = fsRename }) {
   const geo = join(dataDir, 'geo');
   const db = join(dataDir, 'geo.db');
-  const moved = [];
+  const moved = []; // originals now sitting at <path>.old
+  const installed = []; // paths now holding new data
   try {
     for (const p of [geo, db]) {
       if (existsSync(p)) {
@@ -154,9 +155,12 @@ export async function swapGeo({ dataDir, newGeoDir, newDbPath, rename = fsRename
       }
     }
     await rename(newGeoDir, geo);
+    installed.push(geo);
     await rename(newDbPath, db);
+    installed.push(db);
   } catch (err) {
-    for (const p of [geo, db]) await rm(p, { recursive: true, force: true }).catch(() => {});
+    // Remove only what new data replaced; originals still in place are left alone.
+    for (const p of installed) await rm(p, { recursive: true, force: true }).catch(() => {});
     for (const p of moved) await fsRename(`${p}.old`, p).catch(() => {});
     throw err;
   }
