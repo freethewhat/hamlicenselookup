@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, readdir, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -201,5 +201,38 @@ test('runDaily refuses a db with an out-of-date schema version', async () => {
       runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }),
       /licenses\.db schema is out of date; run the weekly load/,
     );
+  });
+});
+
+const exists = (p) => access(p).then(() => true, () => false);
+
+test('runDaily refuses to run while a live lock exists and leaves tmp untouched', async () => {
+  await withDir(async (dir) => {
+    const data = join(dir, 'data');
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(2)) }) });
+    const lock = join(data, '.update.lock');
+    await writeFile(lock, String(process.pid));
+    await writeFile(join(data, 'tmp', 'in-flight.zip'), 'x');
+    await assert.rejects(runDaily({ dataDir: data, fetchImpl: fakeFetch({}) }), /Another update is running \(lock: .*\.update\.lock\)/);
+    assert.deepEqual(await readdir(join(data, 'tmp')), ['in-flight.zip']);
+    assert.equal(await exists(lock), true); // not ours to remove
+  });
+});
+
+test('a stale lock is cleared and the run succeeds; the lock is gone afterwards', async () => {
+  await withDir(async (dir) => {
+    const data = join(dir, 'data');
+    await mkdir(data, { recursive: true });
+    await writeFile(join(data, '.update.lock'), '2147483646');
+    await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(2)) }) });
+    assert.equal(await exists(join(data, '.update.lock')), false);
+  });
+});
+
+test('the lock is removed after a failed run too', async () => {
+  await withDir(async (dir) => {
+    const data = join(dir, 'data');
+    await assert.rejects(runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': 500 }) }), /500/);
+    assert.equal(await exists(join(data, '.update.lock')), false);
   });
 });

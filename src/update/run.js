@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createWriteStream, existsSync, renameSync } from 'node:fs';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -51,10 +51,46 @@ function readMeta(dbPath, key) {
   }
 }
 
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === 'EPERM';
+  }
+}
+
+// One update at a time per dataDir: both runs share tmp/ and swap or patch licenses.db.
+async function withLock(dataDir, fn) {
+  await mkdir(dataDir, { recursive: true });
+  const lock = join(dataDir, '.update.lock');
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await writeFile(lock, String(process.pid), { flag: 'wx' });
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      const pid = Number((await readFile(lock, 'utf8').catch(() => '')).trim());
+      if (attempt > 0 || pidAlive(pid)) throw new Error(`Another update is running (lock: ${lock})`, { cause: err });
+      await rm(lock, { force: true }); // stale: its owner is gone
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lock, { force: true });
+  }
+}
+
 /** Downloads the weekly file, builds a new db and swaps it in only if it looks sane. */
 export async function runWeekly({
   dataDir, url = WEEKLY_URL, fetchImpl = fetch, minRatio = 0.95, states = [],
 }) {
+  return withLock(dataDir, () => weeklyLocked({ dataDir, url, fetchImpl, minRatio, states }));
+}
+
+async function weeklyLocked({ dataDir, url, fetchImpl, minRatio, states }) {
   const tmp = await prepareTmp(dataDir);
   try {
     const zipPath = join(tmp, 'l_amat.zip');
@@ -87,6 +123,10 @@ export async function runWeekly({
 
 /** Downloads the seven daily files and applies them oldest first. */
 export async function runDaily({ dataDir, baseUrl = DAILY_BASE_URL, fetchImpl = fetch }) {
+  return withLock(dataDir, () => dailyLocked({ dataDir, baseUrl, fetchImpl }));
+}
+
+async function dailyLocked({ dataDir, baseUrl, fetchImpl }) {
   const liveDb = join(dataDir, 'licenses.db');
   if (Number(readMeta(liveDb, 'schema_version')) !== LICENSE_SCHEMA_VERSION) {
     throw new Error('licenses.db schema is out of date; run the weekly load');
