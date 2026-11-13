@@ -234,7 +234,8 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
 
     db = new Database(outDbPath);
     // The file is only swapped in after success, so durability during the build is moot.
-    // WAL is switched on once the build is finished (the mode persists in the file).
+    // Rollback journal (DELETE) is set once the build is finished: sidecar files belong to the
+    // path, so a WAL-mode file swapped in by rename could replay a stale -wal.
     db.pragma('journal_mode = OFF');
     db.pragma('synchronous = OFF');
     db.pragma('cache_size = -200000');
@@ -264,7 +265,7 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
       ['load_states', states.join(',')],
     ]) setMeta.run(k, v);
 
-    db.pragma('journal_mode = WAL');
+    db.pragma('journal_mode = DELETE');
     db.pragma('synchronous = NORMAL');
     db.close();
     db = null;

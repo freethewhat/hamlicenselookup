@@ -21,6 +21,7 @@ export async function applyDaily(zipPath, dbPath) {
     const fileDate = parseCountsDate(await readText(await entries.get('counts')()));
 
     db = new Database(dbPath);
+    db.pragma('busy_timeout = 10000'); // readers may briefly hold shared locks
     const appliedThrough = metaValue(db, 'daily_applied_through');
     if (appliedThrough && fileDate <= appliedThrough) return { changed: 0, fileDate, skipped: true };
     const states = (metaValue(db, 'load_states') ?? '').split(',').filter(Boolean);

@@ -79,7 +79,7 @@ test('loadWeekly builds licenses with classification, FRN pass and meta', async 
       assert.equal(meta.license_count, '5');
       assert.equal(meta.schema_version, String(LICENSE_SCHEMA_VERSION));
       assert.equal(meta.load_states, '');
-      assert.equal(db.pragma('journal_mode', { simple: true }), 'wal');
+      assert.equal(db.pragma('journal_mode', { simple: true }), 'delete');
       assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'lic_zip5'").get());
     } finally {
       db.close();
