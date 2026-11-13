@@ -13,7 +13,8 @@
     "update:weekly": "node scripts/update.js weekly",
     "update:daily": "node scripts/update.js daily",
     "build:geo": "node --max-old-space-size=1024 scripts/build-geo.js",
-    "setup": "npm run build:geo && npm run update:weekly"
+    "update:auto": "node --max-old-space-size=1024 scripts/update.js auto",
+    "setup": "node --max-old-space-size=1024 scripts/update.js auto"
   },
   "dependencies": {
     "better-sqlite3": "^13.1.1",

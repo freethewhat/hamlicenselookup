@@ -18,12 +18,18 @@ export async function initAreas({ selection, onNext, onError }) {
 
   // ---- state picker
   const select = $('state-add');
-  try {
-    states = await getStates();
-  } catch (err) {
-    onError(err.message);
+  // Also called again when a data update finishes after the page opened with no data.
+  async function loadStates() {
+    try {
+      states = await getStates();
+    } catch (err) {
+      onError(err.message);
+      return;
+    }
+    select.replaceChildren(select.options[0]);
+    for (const s of states) select.append(new Option(`${s.name} (${s.abbr})`, s.abbr));
   }
-  for (const s of states) select.append(new Option(`${s.name} (${s.abbr})`, s.abbr));
+  await loadStates();
 
   const stateName = (abbr) => states.find((s) => s.abbr === abbr)?.name ?? abbr;
 
@@ -135,5 +141,5 @@ export async function initAreas({ selection, onNext, onError }) {
   renderSelected();
   form.setCounties([]);
   // Leaflet needs a size recalculation after its container was hidden.
-  return { refresh: () => map.refresh() };
+  return { refresh: () => map.refresh(), reloadStates: loadStates };
 }

@@ -4,3 +4,4 @@ data/
 .claude/worktrees/
 .playwright-mcp/
 .env
+data-scratch/

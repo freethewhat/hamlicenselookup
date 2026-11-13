@@ -27,6 +27,7 @@ async function post(url, body) {
   return res;
 }
 
+export const getStatus = () => getJson('/api/status');
 export const getMeta = () => getJson('/api/meta');
 export const getStates = () => getJson('/api/states');
 export const getCounties = (state) => getJson(`/api/counties?state=${encodeURIComponent(state)}`);

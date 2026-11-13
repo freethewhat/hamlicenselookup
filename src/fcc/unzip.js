@@ -13,12 +13,14 @@ export async function readZipEntries(zipPath, names) {
   const wanted = new Map(names.map((n) => [n.toLowerCase(), n]));
   const zip = await open(zipPath);
   const found = new Map();
+  found.sizes = new Map(); // uncompressed bytes per entry, for progress reporting
   await new Promise((resolve, reject) => {
     zip.on('error', reject);
     zip.on('end', resolve);
     zip.on('entry', (entry) => {
       const name = wanted.get(entry.fileName.toLowerCase());
       if (name) {
+        found.sizes.set(name, entry.uncompressedSize);
         found.set(name, () => new Promise((res, rej) => {
           zip.openReadStream(entry, (err, stream) => (err ? rej(err) : res(stream)));
         }));

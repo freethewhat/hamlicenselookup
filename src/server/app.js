@@ -6,6 +6,7 @@ import { openHandle } from '../db/handle.js';
 import { resolveZips } from '../search/resolve.js';
 import { countLicenses, iterateLicenses } from '../search/query.js';
 import { writeCsv } from '../search/csv.js';
+import { readStatus } from '../update/status.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MAX_ZIPS = 5000;
@@ -66,6 +67,16 @@ export function createApp({ dataDir, now = () => new Date(), recheckMs, rateLimi
   app.set('trust proxy', 1);
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+  // Update progress works with no data loaded. The page polls it every 2 s, so it gets its own limit.
+  app.get(
+    '/api/status',
+    rateLimit({ windowMs: 60_000, limit: Math.max(rateLimitPerMinute, 120), standardHeaders: true, legacyHeaders: false }),
+    (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      res.json(readStatus(dataDir));
+    },
+  );
 
   app.use(
     '/api',

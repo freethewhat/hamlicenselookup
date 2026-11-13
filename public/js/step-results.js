@@ -1,6 +1,7 @@
 // Step 3: count, preview table, and CSV download.
 import { search, exportCsv } from './api.js';
 import { rowCells } from './format.js';
+import { dataLoadingNotice } from './status-format.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -15,7 +16,7 @@ function row(r) {
 }
 
 // Returns { show } which runs the search for the current selection and filters.
-export function initResults({ selection, getFilters, onBack, onError }) {
+export function initResults({ selection, getFilters, onBack, onError, isUpdating = () => false }) {
   const download = $('download-csv');
   let body = null;
   let count = 0; // hits for the current search
@@ -76,8 +77,9 @@ export function initResults({ selection, getFilters, onBack, onError }) {
       download.disabled = false;
     } catch (err) {
       if (mine !== token) return;
-      $('result-count').textContent = '';
-      onError(err.message);
+      const notice = dataLoadingNotice(err, isUpdating());
+      $('result-count').textContent = notice ?? '';
+      if (!notice) onError(err.message);
     }
   }
 

@@ -83,7 +83,7 @@ test('first weekly creates licenses.db, sends a User-Agent and leaves tmp empty'
     assert.equal(meta(join(data, 'licenses.db')).license_count, '3');
     assert.equal(seen[0].init.headers['User-Agent'], 'ham-license-finder');
     assert.deepEqual(await readdir(join(data, 'tmp')), []);
-    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp']);
+    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp', 'update-status.json']);
   });
 });
 
@@ -111,7 +111,7 @@ test('a stale licenses.db-wal/-shm from an older WAL-mode file is removed after 
     await writeStale(join(data, 'licenses.db-wal'));
     await writeStale(join(data, 'licenses.db-shm'));
     await runWeekly({ dataDir: data, fetchImpl: fakeFetch({ 'l_amat.zip': await zipBytes(dir, 'w', weekly(3)) }) });
-    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp']);
+    assert.deepEqual((await readdir(data)).sort(), ['.update-lock.db', 'licenses.db', 'tmp', 'update-status.json']);
   });
 });
 

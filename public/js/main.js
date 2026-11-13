@@ -1,9 +1,11 @@
 // Page shell: header step bar, banners, footer, and step switching. Steps 2 and 3 mount into #step-2 / #step-3.
 import { getMeta } from './api.js';
+import { dataLoadingNotice } from './status-format.js';
 import { createSelection } from './selection.js';
 import { initAreas } from './step-areas.js';
 import { initFilters } from './step-filters.js';
 import { initResults } from './step-results.js';
+import { initUpdateBanner } from './update-banner.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -37,12 +39,22 @@ async function loadMeta() {
     $('data-as-of').textContent = meta.dataAsOf ?? 'unknown';
     $('banner-stale').hidden = !meta.stale;
   } catch (err) {
-    showError(err.message);
+    // The update banner already explains a first load in progress.
+    if (!dataLoadingNotice(err, updateBanner.isRunning())) showError(err.message);
   }
 }
 
+// A running update just finished: show the new date, drop stale errors, reload the state list.
+async function onDataReady() {
+  showError('');
+  await loadMeta();
+  await areas?.reloadStates();
+}
+
+const updateBanner = initUpdateBanner({ onDataReady });
+await updateBanner.firstPoll;
 loadMeta();
 areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });
 
 const filters = initFilters({ onBack: () => goToStep(1), onNext: () => { goToStep(3); results.show(); } });
-const results = initResults({ selection, getFilters: filters.getFilters, onBack: () => goToStep(2), onError: showError });
+const results = initResults({ selection, getFilters: filters.getFilters, onBack: () => goToStep(2), onError: showError, isUpdating: updateBanner.isRunning });

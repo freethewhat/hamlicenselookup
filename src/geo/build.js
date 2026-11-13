@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { readZipEntries } from '../fcc/unzip.js';
-import { download, acquireUpdateLock } from '../update/run.js';
+import { download, runLockedJob } from '../update/run.js';
+import { createProgressSink } from '../update/status.js';
 import { STATES, STATE_BY_FIPS, STATE_BY_ABBR } from './fips.js';
 
 export const GEO_SCHEMA_VERSION = 1;
@@ -168,22 +169,23 @@ export async function swapGeo({ dataDir, newGeoDir, newDbPath, rename = fsRename
 }
 
 // Holds the shared update lock so a geo build cannot run alongside a weekly or daily load.
-export async function buildGeo({ dataDir, fetchImpl = fetch }) {
-  const lock = await acquireUpdateLock(dataDir);
-  try {
-    await buildGeoLocked({ dataDir, fetchImpl });
-  } finally {
-    lock.release();
-  }
+export async function buildGeo({ dataDir, fetchImpl = fetch, onProgress }) {
+  await runLockedJob(dataDir, 'geo', (status) => {
+    const sink = createProgressSink(status);
+    return buildGeoUnlocked({ dataDir, fetchImpl, onProgress: onProgress ? (...a) => { sink(...a); onProgress(...a); } : sink });
+  }, () => 'Map data built');
 }
 
-async function buildGeoLocked({ dataDir, fetchImpl }) {
+/** Like buildGeo but the caller already holds the update lock. onProgress(step, done, total, label). */
+export async function buildGeoUnlocked({ dataDir, fetchImpl = fetch, onProgress = () => {} }) {
   const mapshaper = createRequire(import.meta.url)('mapshaper');
   const tmp = join(dataDir, 'tmp-geo');
   await rm(tmp, { recursive: true, force: true });
   await mkdir(tmp, { recursive: true });
+  let downloaded = 0;
   const dl = async (url, name) => {
-    await download(fetchImpl, url, join(tmp, name));
+    const label = `Downloading map sources (${++downloaded} of 4)`;
+    await download(fetchImpl, url, join(tmp, name), { onProgress: (d, t) => onProgress('download', d, t, label) });
     return join(tmp, name);
   };
 
@@ -208,6 +210,7 @@ async function buildGeoLocked({ dataDir, fetchImpl }) {
   await mkdir(zctaOut, { recursive: true });
 
   console.log('Simplifying county shapes...');
+  onProgress('geo', null, null, 'Simplifying county shapes');
   await mapshaper.runCommands([
     '-i', join(tmp, 'county', `${countyBase}.shp`),
     '-each', 'geoid=GEOID, name=NAME, st=STUSPS',
@@ -224,6 +227,7 @@ async function buildGeoLocked({ dataDir, fetchImpl }) {
   }
 
   console.log('Building geo.db...');
+  onProgress('geo', null, null, 'Building ZIP and county tables');
   const tmpDb = join(tmp, 'geo.db');
   const { zipCount, unassigned } = buildGeoDb({ relPath, geonamesPath, countyNames, outDbPath: tmpDb });
 
@@ -235,6 +239,7 @@ async function buildGeoLocked({ dataDir, fetchImpl }) {
   await writeFile(csvPath, `zip,st\n${rows.map((r) => `${r.zip},${r.state}`).join('\n')}\n`);
 
   console.log('Simplifying ZIP shapes...');
+  onProgress('geo', null, null, 'Simplifying ZIP shapes');
   await mapshaper.runCommands([
     '-i', join(tmp, 'zcta', `${zctaBase}.shp`),
     '-join', csvPath, 'keys=ZCTA5CE20,zip', 'field-types=zip:str',
@@ -251,6 +256,7 @@ async function buildGeoLocked({ dataDir, fetchImpl }) {
   await placeStateFiles(countyOut, newGeo, 'counties');
   await placeStateFiles(zctaOut, newGeo, 'zips');
 
+  onProgress('swap', null, null, 'Installing the new map data');
   await swapGeo({ dataDir, newGeoDir: newGeo, newDbPath: tmpDb });
   await rm(tmp, { recursive: true, force: true });
   console.log(`geo built: ${zipCount} ZIPs, ${unassigned} without a county`);

@@ -8,6 +8,8 @@
   --accent-fg: #fff;
   --warn-bg: #fff4d6;
   --err-bg: #fde3e1;
+  --info-bg: #e3eefa;
+  --ok-bg: #e0f3e4;
 }
 
 * { box-sizing: border-box; }
@@ -35,6 +37,11 @@ main { max-width: 56rem; margin: 0 auto; padding: 1rem; }
 .banner { padding: .6rem 1rem; text-align: center; }
 .banner.warn { background: var(--warn-bg); }
 .banner.error { background: var(--err-bg); }
+.update-banner { display: flex; flex-direction: column; align-items: center; gap: .4rem; margin: 0 0 1rem; border: 1px solid var(--line); border-radius: 6px; }
+.update-banner.info { background: var(--info-bg); }
+.update-banner.success { background: var(--ok-bg); }
+.update-banner.error { background: var(--err-bg); }
+.update-banner progress { width: min(28rem, 100%); }
 [hidden] { display: none !important; }
 
 .field { margin-bottom: 1rem; }

@@ -11,7 +11,7 @@ const metaValue = (db, key) => db.prepare('SELECT value FROM meta WHERE key = ?'
  * set for each changed license. Skipped (nothing changed) when the file is not newer
  * than meta.daily_applied_through.
  */
-export async function applyDaily(zipPath, dbPath) {
+export async function applyDaily(zipPath, dbPath, { onProgress } = {}) {
   const entries = await readZipEntries(zipPath, REQUIRED);
   let db;
   try {
@@ -34,7 +34,7 @@ export async function applyDaily(zipPath, dbPath) {
     // The daily is small, so its stage lives in memory.
     db.exec("ATTACH DATABASE ':memory:' AS stage");
     createStage(db);
-    await loadStage(db, entries, new Set(states), 'stage.hs');
+    await loadStage(db, entries, new Set(states), 'stage.hs', onProgress);
 
     let changed = 0;
     db.transaction(() => {

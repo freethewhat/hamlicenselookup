@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { runWeekly, runDaily } from '../src/update/run.js';
+import { runWeekly, runDaily, runAuto } from '../src/update/run.js';
 
 const mode = process.argv[2];
 const dataDir = resolve(process.env.DATA_DIR || './data');
@@ -13,8 +13,11 @@ try {
   } else if (mode === 'daily') {
     const r = await runDaily({ dataDir });
     console.log(`daily: applied ${r.applied.length} file(s)${r.applied.length ? `: ${r.applied.join(', ')}` : ''}`);
+  } else if (mode === 'auto') {
+    const r = await runAuto({ dataDir, states });
+    if (r.actions.length) console.log(`auto: ran ${r.actions.join(', ')}`);
   } else {
-    throw new Error('Usage: update.js weekly|daily');
+    throw new Error('Usage: update.js weekly|daily|auto');
   }
 } catch (err) {
   console.error(err.message);

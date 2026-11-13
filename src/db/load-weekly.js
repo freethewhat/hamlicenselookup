@@ -26,12 +26,21 @@ export async function readText(stream) {
   return Buffer.concat(chunks).toString('latin1');
 }
 
+// Passes chunks through, reporting the bytes seen so far.
+async function* counted(stream, onBytes) {
+  for await (const chunk of stream) {
+    onBytes(chunk.length);
+    yield chunk;
+  }
+}
+
 // Streams a .dat entry into a prepared insert, committing every BATCH rows.
-async function streamInto(db, open, prefix, stmt, toParams) {
+async function streamInto(db, open, prefix, stmt, toParams, onBytes) {
   let n = 0;
   db.exec('BEGIN');
   try {
-    for await (const f of readDatLines(await open(), prefix)) {
+    const stream = await open();
+    for await (const f of readDatLines(onBytes ? counted(stream, onBytes) : stream, prefix)) {
       const params = toParams(f);
       if (!params) continue;
       stmt.run(params);
@@ -61,7 +70,15 @@ export function createStage(db) {
  * and created). Event rows go to hsTable ('history' or 'stage.hs'). EN rows outside a
  * non-empty stateSet are dropped.
  */
-export async function loadStage(db, entries, stateSet, hsTable) {
+export async function loadStage(db, entries, stateSet, hsTable, onProgress) {
+  // Progress is uncompressed bytes read over the four .dat entries' total size.
+  const names = ['EN.dat', 'HD.dat', 'AM.dat', 'HS.dat'];
+  const total = names.reduce((sum, n) => sum + (entries.sizes?.get(n) ?? 0), 0);
+  let read = 0;
+  const onBytes = onProgress && total > 0
+    ? (n) => onProgress('import', Math.min(read += n, total), total)
+    : undefined;
+  onBytes?.(0);
   await streamInto(db, entries.get('EN.dat'), 'EN',
     db.prepare('INSERT OR REPLACE INTO stage.en VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     (f) => {
@@ -69,26 +86,26 @@ export async function loadStage(db, entries, stateSet, hsTable) {
       if (!e || (stateSet.size && !stateSet.has(e.state))) return null;
       return [e.usid, e.entityName, e.first, e.mi, e.last, e.suffix, e.street, e.city,
         e.state, e.zip, e.zip5, e.poBox, e.frn, e.applicantType];
-    });
+    }, onBytes);
   await streamInto(db, entries.get('HD.dat'), 'HD',
     db.prepare('INSERT OR REPLACE INTO stage.hd VALUES (?,?,?,?,?,?,?,?)'),
     (f) => {
       const h = parseHD(f);
       return [h.usid, h.call.trim().toUpperCase(), h.status, h.service, h.grantDate,
         h.expiredDate, h.cancelDate, h.lastActionDate];
-    });
+    }, onBytes);
   await streamInto(db, entries.get('AM.dat'), 'AM',
     db.prepare('INSERT OR REPLACE INTO stage.am VALUES (?,?,?,?,?)'),
     (f) => {
       const a = parseAM(f);
       return [a.usid, a.opClass, a.trusteeCall, a.prevCall, a.prevClass];
-    });
+    }, onBytes);
   await streamInto(db, entries.get('HS.dat'), 'HS',
     db.prepare(`INSERT INTO ${hsTable} (usid, date, code) VALUES (?,?,?)`),
     (f) => {
       const h = parseHS(f);
       return h.date ? [h.usid, h.date, h.code] : null;
-    });
+    }, onBytes);
 }
 
 /** HD drives; EN is an INNER JOIN when filtering by state, else LEFT JOIN. */
@@ -143,7 +160,7 @@ const FRN_PASS_WHERE = `first_license_date IS NOT NULL AND frn <> '' AND EXISTS 
  * license on the same FRN has an earlier event. With a usid list, the set is widened to
  * every license sharing an FRN with one of them, and the FRN pass covers those FRNs.
  */
-export function reclassify(db, usids) {
+export function reclassify(db, usids, onProgress) {
   const update = db.prepare(`UPDATE licenses SET first_license_date = ?, upgrade_date = ?,
     earliest_event_date = ? WHERE usid = ?`);
   const write = (lic, history) => {
@@ -159,6 +176,8 @@ export function reclassify(db, usids) {
 
   if (usids === undefined) {
     // Ordered merge walk: licenses and history both ascend by usid.
+    const total = onProgress ? db.prepare('SELECT count(*) AS n FROM licenses').get().n : 0;
+    onProgress?.('classify', 0, total);
     const hist = pagedHistory(db);
     let next = hist.next();
     db.exec('BEGIN');
@@ -172,7 +191,11 @@ export function reclassify(db, usids) {
           next = hist.next();
         }
         write(lic, events);
-        if (++n % BATCH === 0) { db.exec('COMMIT'); db.exec('BEGIN'); }
+        if (++n % BATCH === 0) {
+          db.exec('COMMIT');
+          db.exec('BEGIN');
+          onProgress?.('classify', n, total);
+        }
       }
       db.exec('COMMIT');
     } catch (err) {
@@ -243,8 +266,9 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
     db.exec(SCHEMA_SQL);
     db.exec(`ATTACH DATABASE '${stagePath.replace(/'/g, "''")}' AS stage`);
     createStage(db);
-    await loadStage(db, entries, new Set(states), 'history');
+    await loadStage(db, entries, new Set(states), 'history', opts.onProgress);
 
+    opts.onProgress?.('index', null, null);
     db.exec(`${licenseInsertSql(states.length > 0)};
       DETACH DATABASE stage;`);
     await removeDb(stagePath);
@@ -252,7 +276,7 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
     // History for licenses that were dropped (no HD row, or filtered out by state).
     db.exec('DELETE FROM history WHERE usid NOT IN (SELECT usid FROM licenses)');
     db.exec(INDEX_SQL);
-    reclassify(db);
+    reclassify(db, undefined, opts.onProgress);
 
     const licenseCount = db.prepare('SELECT count(*) AS n FROM licenses').get().n;
     const setMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');

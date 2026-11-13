@@ -196,3 +196,25 @@ test('public files revalidate; vendor files cache', async () => {
     assert.match(leaflet.headers.get('cache-control'), /max-age=86400/);
   });
 });
+
+test('GET /api/status is idle with an empty data dir and returns the status file when present', async () => {
+  await withApp(null, {}, async (base, dir) => {
+    let res = await fetch(`${base}/api/status`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { state: 'idle' });
+    const status = {
+      state: 'done', job: 'weekly', step: null, stepLabel: '', done: null, total: null, unit: null,
+      percent: null, startedAt: '2026-11-13T12:00:00.000Z', updatedAt: new Date().toISOString(), message: 'ok', error: null,
+    };
+    await writeFile(join(dir, 'update-status.json'), JSON.stringify(status));
+    res = await fetch(`${base}/api/status`);
+    assert.deepEqual(await res.json(), status);
+  });
+});
+
+test('/api/status has its own limit, so polling does not use up the API limit', async () => {
+  await withApp(fixture, { rateLimitPerMinute: 2 }, async (base) => {
+    for (let i = 0; i < 5; i++) assert.equal((await fetch(`${base}/api/status`)).status, 200);
+    assert.equal((await fetch(`${base}/api/meta`)).status, 200);
+  });
+});

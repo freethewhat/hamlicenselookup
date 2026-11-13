@@ -7,9 +7,12 @@ services:
     networks:
       - web
     restart: unless-stopped
-    mem_limit: 1g
+    # The app runs the start-up data update in this container (as a child process), so the limit
+    # covers the server (~150 MB) plus the largest job: build:geo peaks at 665 MiB, a full-US
+    # weekly load at about 550 MB, both with the 1024 MB heap cap.
+    mem_limit: 1800m
 
-  # One-shot jobs (updates, first load). Not started by `up`; run with
+  # One-shot jobs (timer-driven updates). Not started by `up`; run with
   # `docker compose run --rm jobs ...`. More memory than the web container:
   # build:geo measured at a 665 MiB peak with its heap capped at 1024 MB.
   jobs:
