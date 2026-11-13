@@ -26,6 +26,9 @@ const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'st
 // Validates the request body; returns the resolved ZIP list and normalized filters.
 function parseSearch(geoDb, body) {
   const { zips = [], counties = [], filters = {} } = body ?? {};
+  if (filters === null || typeof filters !== 'object' || Array.isArray(filters)) {
+    throw new HttpError(400, { error: 'filters must be an object', invalid: [] });
+  }
   if (!isStringArray(zips) || !isStringArray(counties)) {
     throw new HttpError(400, { error: 'zips and counties must be lists of strings', invalid: [] });
   }

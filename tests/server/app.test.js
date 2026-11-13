@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, rename } from 'node:fs/promises';
+import { mkdtemp, rm, rename, writeFile, copyFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -110,6 +110,10 @@ test('rejects bad input', async () => {
 
     res = await post(`${base}/api/export`, { filters });
     assert.equal(res.status, 400);
+    for (const bad of [null, [], 'x']) {
+      res = await post(`${base}/api/search`, { zips: ['59801'], filters: bad });
+      assert.equal(res.status, 400);
+    }
     res = await fetch(`${base}/api/search`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
     assert.equal(res.status, 400);
   });
@@ -164,5 +168,19 @@ test('rate limit applies to the api', async () => {
     assert.equal((await fetch(`${base}/api/states`)).status, 200);
     assert.equal((await fetch(`${base}/api/states`)).status, 200);
     assert.equal((await fetch(`${base}/api/states`)).status, 429);
+  });
+});
+
+test('retries a failed open even when the file inode is unchanged', async () => {
+  const setup = async (dir) => {
+    await writeFile(join(dir, 'licenses.db'), 'not a database, just garbage '.repeat(50));
+    makeGeoDb(join(dir, 'geo.db'), { counties: COUNTIES, zips: GEO_ZIPS });
+  };
+  await withApp(setup, { recheckMs: 20 }, async (base, dir) => {
+    assert.equal((await fetch(`${base}/api/meta`)).status, 503);
+    makeLicenseDb(join(dir, 'good.db'));
+    await copyFile(join(dir, 'good.db'), join(dir, 'licenses.db')); // same inode, new contents
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal((await fetch(`${base}/api/meta`)).status, 200);
   });
 });

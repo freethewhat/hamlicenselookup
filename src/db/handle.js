@@ -14,8 +14,10 @@ function schemaState(path, expected) {
     db = new Database(path, { readonly: true, fileMustExist: true });
     const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
     return row && Number(row.value) === expected ? 'ok' : 'outdated';
-  } catch {
-    return 'outdated';
+  } catch (err) {
+    // A missing meta table is a real layout mismatch; any other open/read error is
+    // treated as transient so the handle retries.
+    return /no such table/.test(err.message) ? 'outdated' : 'missing';
   } finally {
     db?.close();
   }
@@ -84,6 +86,8 @@ export function openHandle({ licenseDbPath, geoDbPath, recheckMs = 5000 }) {
     if (next === ids) return;
     ids = next;
     reopen();
+    // Unchanged inodes would never retry a failed open, so force a retry next recheck.
+    if (state !== 'ok') ids = null;
   }
 
   return {
