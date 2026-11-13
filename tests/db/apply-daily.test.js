@@ -187,3 +187,14 @@ test('reclassify on the older license re-nulls a same-FRN license that it shadow
     }, {});
   });
 });
+
+test('applyDaily treats a counts-only zip (a day with no changes) as nothing to apply', async () => {
+  await withDir(async (dir) => {
+    const out = join(dir, 'licenses.db');
+    await loadWeekly(await zipTo(dir, 'w', weekly()), out);
+    const before = inDb(out, (db) => meta(db));
+    const res = await applyDaily(await zipTo(dir, 'd', { counts: DAILY_COUNTS }), out);
+    assert.deepEqual(res, { changed: 0, fileDate: '2026-11-10', skipped: true });
+    assert.deepEqual(inDb(out, (db) => meta(db)), before);
+  });
+});

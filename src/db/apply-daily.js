@@ -15,10 +15,15 @@ export async function applyDaily(zipPath, dbPath) {
   const entries = await readZipEntries(zipPath, REQUIRED);
   let db;
   try {
+    if (!entries.has('counts')) throw new Error('Daily zip is missing counts');
+    const fileDate = parseCountsDate(await readText(await entries.get('counts')()));
+    // FCC publishes a counts-only zip for a day with no changes (e.g. Sunday).
+    if (REQUIRED.every((name) => name === 'counts' || !entries.has(name))) {
+      return { changed: 0, fileDate, skipped: true };
+    }
     for (const name of REQUIRED) {
       if (!entries.has(name)) throw new Error(`Daily zip is missing ${name}`);
     }
-    const fileDate = parseCountsDate(await readText(await entries.get('counts')()));
 
     db = new Database(dbPath);
     db.pragma('busy_timeout = 10000'); // readers may briefly hold shared locks
