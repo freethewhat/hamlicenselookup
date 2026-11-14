@@ -37,6 +37,7 @@ test('hints are tied to their fields', () => {
     ['county-search', 'county-hint'],
     ['zip-text', 'zip-hint'],
     ['f-since', 'since-hint'],
+    ['f-mailer', 'mailer-hint'],
     ['next-1', 'next-1-hint'],
   ]) {
     assert.match(tagWithId(html, field), new RegExp(`aria-describedby="[^"]*\\b${hint}\\b`), field);

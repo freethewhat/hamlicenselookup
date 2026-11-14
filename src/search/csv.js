@@ -1,6 +1,6 @@
 import { CLASS_LABELS, STATUS_LABELS } from '../fcc/fields.js';
 
-const zip = (z) => (/^\d{9}$/.test(z ?? '') ? `${z.slice(0, 5)}-${z.slice(5)}` : (z ?? ''));
+export const csvZip = (z) => (/^\d{9}$/.test(z ?? '') ? `${z.slice(0, 5)}-${z.slice(5)}` : (z ?? ''));
 const label = (map, v) => (v ? (map[v] ?? v) : '');
 
 export const CSV_COLUMNS = [
@@ -14,7 +14,7 @@ export const CSV_COLUMNS = [
   ['PO Box', (r) => r.po_box],
   ['City', (r) => r.city],
   ['State', (r) => r.state],
-  ['ZIP', (r) => zip(r.zip)],
+  ['ZIP', (r) => csvZip(r.zip)],
   ['County', (r) => r.county_name || 'Unassigned'],
   ['License Class', (r) => label(CLASS_LABELS, r.op_class)],
   ['License Status', (r) => label(STATUS_LABELS, r.status)],
@@ -43,7 +43,8 @@ export const csvLine = (values) => values.map(cell).join(',');
 // destination closes mid-export, and releases the row iterator so SQLite can finish.
 // An open iterator holds a read lock that blocks the daily update, so a client that stops
 // reading for `drainTimeoutMs`, or an export that runs past `deadlineMs`, is cut off.
-export async function writeCsv(rows, out, { drainTimeoutMs = Infinity, deadlineMs = Infinity } = {}) {
+// `columns` is a list of [header, (row) => value]; the mailer export passes MAILER_COLUMNS.
+export async function writeCsv(rows, out, { columns = CSV_COLUMNS, drainTimeoutMs = Infinity, deadlineMs = Infinity } = {}) {
   const deadline = Number.isFinite(deadlineMs) ? setTimeout(() => out.destroy(), deadlineMs) : null;
   // Returns false when the destination is gone.
   const write = async (chunk) => {
@@ -68,10 +69,10 @@ export async function writeCsv(rows, out, { drainTimeoutMs = Infinity, deadlineM
   const ignore = () => {};
   out.on('error', ignore);
   try {
-    let ok = await write(`\uFEFF${csvLine(CSV_COLUMNS.map(([h]) => h))}\r\n`);
+    let ok = await write(`\uFEFF${csvLine(columns.map(([h]) => h))}\r\n`);
     if (ok) {
       for (const row of rows) {
-        ok = await write(`${csvLine(CSV_COLUMNS.map(([, f]) => f(row)))}\r\n`);
+        ok = await write(`${csvLine(columns.map(([, f]) => f(row)))}\r\n`);
         if (!ok) break;
       }
     }

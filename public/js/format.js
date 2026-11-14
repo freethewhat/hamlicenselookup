@@ -42,3 +42,10 @@ export function rowCells(r) {
     r.new_label ?? '',
   ];
 }
+
+// Result count line. addressCount is only sent when "Prepare for mailer" is on.
+export function countMessage(count, addressCount) {
+  const hams = `${count.toLocaleString('en-US')} ${count === 1 ? 'ham' : 'hams'} found`;
+  if (addressCount == null) return hams;
+  return `${hams} at ${addressCount.toLocaleString('en-US')} ${addressCount === 1 ? 'address' : 'addresses'}`;
+}

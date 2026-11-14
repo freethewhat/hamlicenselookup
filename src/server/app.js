@@ -4,8 +4,9 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { openHandle } from '../db/handle.js';
 import { resolveZips } from '../search/resolve.js';
-import { countLicenses, iterateLicenses } from '../search/query.js';
+import { countLicenses, iterateAddresses, iterateLicenses } from '../search/query.js';
 import { writeCsv } from '../search/csv.js';
+import { MAILER_COLUMNS, countAddresses, groupByAddress } from '../search/mailer.js';
 import { readStatus } from '../update/status.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -31,9 +32,10 @@ class HttpError extends Error {
 
 const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
 
-// Validates the request body; returns the resolved ZIP list and normalized filters.
+// Validates the request body; returns the resolved ZIP list, normalized filters, and the mailer flag.
+// `mailer: true` groups the export by mailing address (it changes the output, not who matches).
 function parseSearch(geoDb, body) {
-  const { zips = [], counties = [], filters = {} } = body ?? {};
+  const { zips = [], counties = [], filters = {}, mailer = false } = body ?? {};
   if (filters === null || typeof filters !== 'object' || Array.isArray(filters)) {
     throw new HttpError(400, { error: 'filters must be an object', invalid: [] });
   }
@@ -43,6 +45,9 @@ function parseSearch(geoDb, body) {
   const since = filters.firstLicenseSince ?? null;
   if (since !== null && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
     throw new HttpError(400, { error: 'firstLicenseSince must be YYYY-MM-DD', invalid: [] });
+  }
+  if (typeof mailer !== 'boolean') {
+    throw new HttpError(400, { error: 'mailer must be true or false', invalid: [] });
   }
   const normalized = {
     firstLicenseSince: since,
@@ -60,7 +65,7 @@ function parseSearch(geoDb, body) {
   if (resolved.zips.length > MAX_ZIPS) {
     throw new HttpError(400, { error: `Too many ZIP codes (max ${MAX_ZIPS})` });
   }
-  return { zips: resolved.zips, filters: normalized };
+  return { zips: resolved.zips, filters: normalized, mailer };
 }
 
 export function createApp({
@@ -148,22 +153,25 @@ export function createApp({
   });
 
   app.post('/api/search', (req, res) => {
-    const { zips, filters } = parseSearch(req.db, req.body);
+    const { zips, filters, mailer } = parseSearch(req.db, req.body);
     res.json({
       count: countLicenses(req.db, zips, filters),
+      ...(mailer ? { addressCount: countAddresses(iterateAddresses(req.db, zips, filters)) } : {}),
       preview: [...iterateLicenses(req.db, zips, filters, PREVIEW_ROWS)],
       zipCount: zips.length,
     });
   });
 
   app.post('/api/export', async (req, res) => {
-    const { zips, filters } = parseSearch(req.db, req.body);
+    const { zips, filters, mailer } = parseSearch(req.db, req.body);
     const day = now().toISOString().slice(0, 10);
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="hams-${day}.csv"`,
+      'Content-Disposition': `attachment; filename="hams-${mailer ? 'mailer-' : ''}${day}.csv"`,
     });
-    await writeCsv(iterateLicenses(req.db, zips, filters), res, {
+    const licenses = iterateLicenses(req.db, zips, filters);
+    await writeCsv(mailer ? groupByAddress(licenses) : licenses, res, {
+      columns: mailer ? MAILER_COLUMNS : undefined,
       drainTimeoutMs: exportDrainTimeoutMs,
       deadlineMs: exportTimeoutMs,
     });
