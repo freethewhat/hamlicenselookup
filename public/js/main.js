@@ -73,4 +73,4 @@ loadMeta();
 areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });
 
 const filters = initFilters({ onBack: () => goToStep(1), onNext: () => { goToStep(3); results.show(); } });
-const results = initResults({ selection, getFilters: filters.getFilters, onBack: () => goToStep(2), onError: showError, isUpdating: updateBanner.isRunning });
+const results = initResults({ selection, getFilters: filters.getFilters, getMailer: filters.getMailer, onBack: () => goToStep(2), onError: showError, isUpdating: updateBanner.isRunning });

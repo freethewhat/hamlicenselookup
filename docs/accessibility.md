@@ -2,6 +2,31 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
+## Change check: "Prepare for mailer", 2026-11-14
+
+Spec: `docs/superpowers/specs/2026-11-14-prepare-for-mailer-design.md`. Adds one checkbox with a hint on step 2 and an address count on step 3.
+
+**Result: no known WCAG 2.2 AA failures.**
+
+Tools: axe-core 4.10.2 (same rule tags as below) and playwright-core 1.49.1 driving Google Chrome headless, both installed outside this repo. Data: full local data set, Missoula County, MT picked. The page's Content Security Policy stayed on.
+
+| Check | Result |
+|---|---|
+| axe: step 2, mailer off / on | 0 violations |
+| axe: step 3, mailer on | 0 violations |
+| axe: step 2 at 320 px, mailer on | 0 violations |
+| Name and description | Accessibility tree shows `checkbox "Prepare for mailer"`. The hint is its `aria-describedby`. |
+| Keyboard | Tab order: First license only, expired, clubs, **Prepare for mailer**, Back. Space toggles it. No trap. |
+| Focus ring | Solid 3 px slate on the checkbox. |
+| Target size | Label is 44 px tall. Clicking the label text toggles the box. |
+| Live message | Step 3 count stays one `role="status"`. It changes once per search: "396 hams found at 375 addresses". Focus lands on the step 3 heading. |
+| Mailer off | Count goes back to "396 hams found". |
+| 320 px (400% zoom) | No sideways scroll on step 2 or step 3. The hint wraps inside the viewport. |
+| Text spacing at 320 px | No sideways scroll. Label and hint not cut off. |
+| Download | `hams-mailer-2026-11-14.csv`, mailer header, 375 rows (matches the address count). |
+
+Not checked: real screen reader, Firefox, Safari (same gaps as the full audit below). Reduce motion was on for the whole run; the change adds no animation.
+
 ## Latest audit: 2026-11-13
 
 Done after the visual refresh (`docs/superpowers/specs/2026-11-13-visual-refresh-design.md`).

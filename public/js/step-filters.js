@@ -28,7 +28,8 @@ export function filtersFromForm({ firstOnly, since, includeUpgrades, includeExpi
 
 const $ = (id) => document.getElementById(id);
 
-// Returns { getFilters }. onBack/onNext are step navigation callbacks.
+// Returns { getFilters, getMailer }. onBack/onNext are step navigation callbacks.
+// getMailer is kept apart from the filters: it changes the CSV layout, not who matches.
 export function initFilters({ onBack, onNext }) {
   const firstOnly = $('f-first-only');
   const since = $('f-since');
@@ -56,6 +57,9 @@ export function initFilters({ onBack, onNext }) {
       });
       if (f.firstLicenseSince) since.value = f.firstLicenseSince;
       return f;
+    },
+    getMailer() {
+      return $('f-mailer').checked;
     },
   };
 }

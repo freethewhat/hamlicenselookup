@@ -1,6 +1,6 @@
 // Step 3: count, preview table, and CSV download.
 import { search, exportCsv } from './api.js';
-import { rowCells } from './format.js';
+import { countMessage, rowCells } from './format.js';
 import { dataLoadingNotice } from './status-format.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ function row(r) {
 }
 
 // Returns { show } which runs the search for the current selection and filters.
-export function initResults({ selection, getFilters, onBack, onError, isUpdating = () => false }) {
+export function initResults({ selection, getFilters, getMailer = () => false, onBack, onError, isUpdating = () => false }) {
   const download = $('download-csv');
   let body = null;
   let count = 0; // hits for the current search
@@ -27,17 +27,18 @@ export function initResults({ selection, getFilters, onBack, onError, isUpdating
   download.addEventListener('click', async () => {
     if (!body) return;
     const clicked = token;
+    const request = body;
     download.disabled = true;
     let url = null;
     try {
       onError('');
-      const blob = await exportCsv(body);
+      const blob = await exportCsv(request);
       url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const d = new Date();
       const pad = (n) => String(n).padStart(2, '0');
-      a.download = `hams-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`;
+      a.download = `hams-${request.mailer ? 'mailer-' : ''}${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`;
       document.body.append(a);
       a.click();
       a.remove();
@@ -52,7 +53,7 @@ export function initResults({ selection, getFilters, onBack, onError, isUpdating
   async function show() {
     const mine = ++token;
     count = 0;
-    body = { ...selection.toRequest(), filters: getFilters() };
+    body = { ...selection.toRequest(), filters: getFilters(), mailer: getMailer() };
     $('result-count').textContent = 'Searching…';
     $('result-note').textContent = '';
     $('result-table').hidden = true;
@@ -69,7 +70,7 @@ export function initResults({ selection, getFilters, onBack, onError, isUpdating
         $('result-count').textContent = 'No hams match. Try more areas or fewer filters.';
         return;
       }
-      $('result-count').textContent = `${count.toLocaleString('en-US')} ${count === 1 ? 'ham' : 'hams'} found`;
+      $('result-count').textContent = countMessage(count, res.addressCount);
       $('result-rows').replaceChildren(...preview.map(row));
       $('result-table').hidden = false;
       $('result-table').parentElement.hidden = false;
