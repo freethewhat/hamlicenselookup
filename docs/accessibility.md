@@ -2,6 +2,25 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
+## Change check: footer GitHub links, 2026-11-14
+
+Adds two links at the end of the footer: "Source code on GitHub" and "Report a problem" (opens a new GitHub issue).
+
+**Result: no known WCAG 2.2 AA failures.**
+
+Tools: Playwright MCP browser (Chromium) at 320 px wide. No axe run for this change.
+
+| Check | Result |
+|---|---|
+| Link names | Both links have plain text names. The dot between them is `aria-hidden`. |
+| Contrast | Links use `--slate` on `--bg`. That pair is already checked in `tests/public/theme.test.js`. |
+| Color alone | Links are underlined. |
+| Target size | Each link is 24 px tall (141 and 107 px wide). |
+| Focus ring | Links use the global `:focus-visible` slate ring. |
+| 320 px (400% zoom) | No sideways scroll. Links fit on one line. |
+
+Not checked: real screen reader, Firefox, Safari.
+
 ## Change check: "Prepare for mailer", 2026-11-14
 
 Spec: `docs/superpowers/specs/2026-11-14-prepare-for-mailer-design.md`. Adds one checkbox with a hint on step 2 and an address count on step 3.
