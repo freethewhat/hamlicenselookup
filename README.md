@@ -1,12 +1,30 @@
 # Ham License Finder
 
+[![CI and deploy](https://github.com/freethewhat/hamlicenselookup/actions/workflows/ci-deploy.yml/badge.svg)](https://github.com/freethewhat/hamlicenselookup/actions/workflows/ci-deploy.yml)
+
 Find licensed amateur radio operators in an area and export them as a mailing list.
 
 Pick many ZIP codes or counties at once, on a map or in a form. Filter to people who got their first license recently. Download a CSV with call sign, name, and mailing address. Our club uses the list to mail postcards to local hams and to invite new ones to join.
 
 The app keeps its own copy of the public FCC license database and updates it every day. Searches never call FCC servers.
 
-## Quick start with Docker
+## Use the hosted site
+
+You do not need to install anything. Open **https://hams.wa8zkr.com** and start a search.
+
+The hosted site is free for any ham club. Run your own copy only if you want to change the code or keep your own server.
+
+![The area step: four Montana counties picked on the map](docs/images/pick-areas.png)
+
+Found a bug or want a feature? [Open an issue](https://github.com/freethewhat/hamlicenselookup/issues/new).
+
+## About the data and your privacy
+
+- All license data is public. The FCC publishes it for anyone to download.
+- The site does not save your searches. It sets no cookies and has no analytics.
+- Use the list to contact hams about your club. Do not use it for spam or to sell things.
+
+## Run your own copy with Docker
 
 You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose v2.
 
@@ -137,8 +155,12 @@ Read [CLAUDE.md](CLAUDE.md) first. Page changes must stay WCAG 2.2 AA compliant;
 
 1. Make a branch, change the code, and add or update tests.
 2. Run `npm test` and `npm run lint`.
-3. Open a pull request into `main`. GitHub Actions runs the tests. Once the server is set up, a merge into `main` also deploys it. See [deploy/README.md](deploy/README.md).
+3. Open a pull request into `main`. GitHub Actions runs the tests. A merge into `main` deploys the hosted site. See [deploy/README.md](deploy/README.md).
 
 ## Credits
 
 License data comes from the FCC Universal Licensing System. ZIP and county shapes come from the US Census Bureau. Place names come from GeoNames under CC-BY 4.0. Map tiles are © OpenStreetMap contributors. The Lato and Playfair Display fonts are under the SIL Open Font License.
+
+## License
+
+The code is under the [MIT License](LICENSE). The data has its own terms, listed under Credits.
