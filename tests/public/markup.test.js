@@ -87,3 +87,9 @@ test('public/CLAUDE.md states the accessibility rule and README points to it', (
   assert.match(rules, /docs\/accessibility\.md/);
   assert.match(readFileSync(new URL('../../README.md', import.meta.url), 'utf8'), /public\/CLAUDE\.md/);
 });
+
+test('footer links to the repo and to a new GitHub issue', () => {
+  const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] ?? '';
+  assert.match(footer, /<a href="https:\/\/github\.com\/[\w-]+\/[\w-]+">[^<]+<\/a>/);
+  assert.match(footer, /<a href="https:\/\/github\.com\/[\w-]+\/[\w-]+\/issues\/new">Report a problem<\/a>/);
+});
