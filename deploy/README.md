@@ -19,6 +19,7 @@ Owner's checklist, in order. Nothing here has been run against a real server yet
 ## How it works
 
 - Only Caddy publishes ports 80 and 443. The app joins the shared `web` Docker network and is reached as `ham-finder:3100`.
+- Docker logs for the app and Caddy are capped at 3 files of 10 MB each (`logging:` in each Compose file), so they cannot fill the disk.
 - Each deploy pulls the image tagged with the commit SHA (never `latest`), health-checks it, and rolls back to `last-good-tag` if it fails. `./data` is never touched by a deploy.
 - The `deploy` user can only run `deploy <app> <tag>` over SSH. A forced command validates the app name and tag, then runs `/srv/apps/<app>/deploy.sh` through sudo.
 - The app container also runs an update when it starts (map data if missing, the weekly file if the data is missing or older than 7 days, then the daily files), so a server that was down catches up by itself. It shares the container's 1800 MB memory limit. To turn it off, add the line `AUTO_UPDATE=0` to `/srv/apps/ham-finder/.env` and run `docker compose up -d` in `/srv/apps/ham-finder`. Deploys only rewrite the `IMAGE_TAG=` line, so the setting survives them. Progress is written to `update-status.json` in the data folder and shown as a banner on the page.

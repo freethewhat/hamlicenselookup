@@ -14,6 +14,13 @@ services:
     # covers the server (~150 MB) plus the largest job: build:geo peaks at 665 MiB, a full-US
     # weekly load at about 550 MB, both with the 1024 MB heap cap.
     mem_limit: 1800m
+    # Docker keeps container logs with no size limit by default. Cap them so they
+    # cannot fill the disk: at most 3 files of 10 MB each.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # One-shot jobs (timer-driven updates). Not started by `up`; run with
   # `docker compose run --rm jobs ...`. More memory than the web container:
