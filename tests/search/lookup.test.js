@@ -110,3 +110,11 @@ test('every lookup but street uses an index', () => withDb((db) => {
     assert.ok(!plan.includes('SCAN l'), `${p.by} ${p.q}: ${plan.join(' | ')}`);
   }
 }));
+
+test('older licenses of the same holder show newest first', () => withDb((db) => {
+  const ins = db.prepare("INSERT INTO licenses (usid, call, status, applicant_type, last, first, last_key, grant_date) VALUES (?, 'K7ZZZ', 'C', 'I', 'ZZTESTER', 'ZULU', 'ZZTESTER', ?)");
+  ins.run(10, '2001-01-01');
+  ins.run(11, '2011-01-01');
+  ins.run(12, '2006-01-01');
+  assert.deepEqual(lookup(db, { by: 'call', q: 'K7ZZZ' }).rows.map((r) => r.usid), [11, 12, 10]);
+}));

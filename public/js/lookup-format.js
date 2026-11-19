@@ -52,3 +52,13 @@ export function hasQuery({ by, q, state, county }) {
   if (by === 'city') return Boolean(q.trim() && state);
   return Boolean(q.trim());
 }
+
+// Keeps only the values the chosen field uses, so the URL never carries leftovers from another field.
+export function onlyUsedParams({ by, q, state, county }) {
+  return {
+    by,
+    q: by === 'county' ? '' : q,
+    state: by === 'city' || by === 'county' ? state : '',
+    county: by === 'county' ? county : '',
+  };
+}

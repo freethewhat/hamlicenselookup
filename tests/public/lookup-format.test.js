@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BY_FIELDS, BY_STORAGE_KEY, statusWord, lookupName, sinceDate, lookupCells, fccLicenseUrl,
-  lookupCountMessage, paramsFromSearch, searchFromParams, hasQuery,
+  lookupCountMessage, paramsFromSearch, searchFromParams, hasQuery, onlyUsedParams,
 } from '../../public/js/lookup-format.js';
 
 test('BY_FIELDS lists the six fields with labels, call sign first', () => {
@@ -71,4 +71,11 @@ test('hasQuery says when a search can run', () => {
   assert.equal(hasQuery({ by: 'city', q: 'Missoula', state: 'MT', county: '' }), true);
   assert.equal(hasQuery({ by: 'county', q: '', state: 'MT', county: '' }), false);
   assert.equal(hasQuery({ by: 'county', q: '', state: 'MT', county: '30063' }), true);
+});
+
+test('onlyUsedParams blanks the values the field does not use', () => {
+  const all = { by: 'county', q: 'K7AAA', state: 'MT', county: '30063' };
+  assert.deepEqual(onlyUsedParams(all), { by: 'county', q: '', state: 'MT', county: '30063' });
+  assert.deepEqual(onlyUsedParams({ ...all, by: 'city' }), { by: 'city', q: 'K7AAA', state: 'MT', county: '' });
+  assert.deepEqual(onlyUsedParams({ ...all, by: 'call' }), { by: 'call', q: 'K7AAA', state: '', county: '' });
 });

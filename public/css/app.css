@@ -80,6 +80,13 @@ h2[tabindex="-1"]:focus-visible, h3[tabindex="-1"]:focus-visible { outline: 3px 
 }
 .mark::after { content: ''; inline-size: 12px; block-size: 12px; border-radius: 50%; background: var(--red); }
 
+/* Brand on the left, site nav on the right; the nav wraps under the brand on narrow screens. */
+.header-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1rem; margin-block-end: 1rem; }
+.header-top .brand { margin-block-end: 0; }
+.site-nav ul { display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0; }
+.site-nav a { display: inline-flex; align-items: center; min-block-size: 2.75rem; padding: 0 .6rem; border-radius: 6px; color: var(--slate); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.site-nav a[aria-current="page"] { color: var(--ink); text-decoration: none; box-shadow: inset 0 -3px 0 var(--slate); }
+
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; list-style: none; margin: 0; padding: 0; }
 .steps li { font-size: .875rem; font-weight: 700; color: var(--muted); }
 /* Each step is a button so the whole bar segment and label can be clicked. Reset the pill button look. */
@@ -252,3 +259,15 @@ tbody tr:nth-child(even) { background: #fcfbf8; }
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* ---- Lookup page */
+.lookup-form { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 1rem; margin-block-end: 1rem; }
+.lookup-form .field { flex: 1 1 12rem; min-inline-size: 0; }
+.lookup-form #lookup-q-field, .lookup-form #lookup-county-field { flex-basis: 16rem; }
+.lookup-form > .row { flex: 1 0 100%; }
+#lookup-table td .link { min-block-size: 2.75rem; padding: 0; font-weight: 700; }
+.lookup-detail td { background: var(--bg); white-space: normal; }
+.lookup-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: .25rem 0 .75rem; }
+.lookup-detail dt { font-weight: 700; color: var(--ink); }
+.lookup-detail dd { margin: 0; }
+.lookup-detail a { display: inline-block; min-block-size: 24px; line-height: 24px; color: var(--slate); text-decoration: underline; }

@@ -54,7 +54,7 @@ export function lookupSql(db, p, limit = 100) {
     WHERE ${w.sql}
     ORDER BY CASE WHEN l.status = 'A' THEN 0 ELSE 1 END,
       CASE WHEN l.last_key <> '' THEN l.last_key ELSE upper(l.entity_name) END,
-      l.first COLLATE NOCASE, l.call
+      l.first COLLATE NOCASE, l.call, l.grant_date DESC
     LIMIT ${Math.trunc(limit)}`;
   return { sql, countSql, params: w.params };
 }
