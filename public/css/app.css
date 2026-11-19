@@ -82,12 +82,16 @@ h2[tabindex="-1"]:focus-visible, h3[tabindex="-1"]:focus-visible { outline: 3px 
 
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; list-style: none; margin: 0; padding: 0; }
 .steps li { font-size: .875rem; font-weight: 700; color: var(--muted); }
-.steps li::before { content: ''; display: block; block-size: 6px; border-radius: 6px; background: var(--line); margin-block-end: .4rem; transition: background-color .3s; }
+/* Each step is a button so the whole bar segment and label can be clicked. Reset the pill button look. */
+.steps .step-link { display: block; inline-size: 100%; min-block-size: 2.75rem; padding: .25rem 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: start; }
+.steps .step-link:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 3px; }
+.steps .step-link:disabled { background: none; color: inherit; cursor: default; }
+.steps .step-link::before { content: ''; display: block; block-size: 6px; border-radius: 6px; background: var(--line); margin-block-end: .4rem; transition: background-color .3s; }
 .steps li span { font-variant-numeric: tabular-nums; }
 .steps li.done { color: var(--slate); }
-.steps li.done::before { background: var(--line-strong); }
+.steps li.done .step-link::before { background: var(--line-strong); }
 .steps li[aria-current="step"] { color: var(--slate); font-weight: 900; }
-.steps li[aria-current="step"]::before { background: var(--slate); }
+.steps li[aria-current="step"] .step-link::before { background: var(--slate); }
 
 /* ---- Banners */
 .banner { max-width: 56rem; margin: .5rem auto; padding: .7rem 1rem; border-radius: var(--radius-sm); text-align: center; }

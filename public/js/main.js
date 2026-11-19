@@ -7,6 +7,7 @@ import { initFilters } from './step-filters.js';
 import { initResults } from './step-results.js';
 import { initUpdateBanner } from './update-banner.js';
 import { stepHeadingId } from './focus.js';
+import { canEnterStep, stepFromState } from './steps.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,6 +23,43 @@ export function showError(message) {
 
 // Show step n (1-3) and update the step bar. Step modules mount into #step-2 / #step-3.
 let areas = null;
+let results = null;
+let current = 1;
+
+// Go to step n from a button or the step bar, and add a browser history entry so Back and Forward work.
+function navigate(n) {
+  if (n === current || !canEnterStep(n, selection.items().length > 0)) return;
+  history.pushState({ step: n }, '');
+  enterStep(n);
+}
+
+function enterStep(n) {
+  current = n;
+  goToStep(n);
+  if (n === 3) results.show();
+}
+
+// Browser Back or Forward. If the areas were cleared, steps 2 and 3 are closed: go to step 1.
+addEventListener('popstate', (e) => {
+  let n = stepFromState(e.state);
+  if (!canEnterStep(n, selection.items().length > 0)) {
+    n = 1;
+    history.replaceState({ step: 1 }, '');
+  }
+  if (n !== current) enterStep(n);
+});
+
+// The step bar: each step is a button. Steps 2 and 3 open once an area is picked.
+function updateStepBar() {
+  const has = selection.items().length > 0;
+  for (const li of $('step-bar').children) li.querySelector('button').disabled = !canEnterStep(Number(li.dataset.step), has);
+}
+$('step-bar').addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-step]');
+  if (li && !e.target.closest('button')?.disabled) navigate(Number(li.dataset.step));
+});
+selection.onChange(updateStepBar);
+history.replaceState({ step: 1 }, '');
 
 export function goToStep(n) {
   const smooth = typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -70,7 +108,8 @@ const updateBanner = initUpdateBanner({ onDataReady });
 // Never let a slow status call hold up the page.
 await Promise.race([updateBanner.firstPoll, new Promise((r) => setTimeout(r, 3000))]);
 loadMeta();
-areas = await initAreas({ selection, onNext: () => goToStep(2), onError: showError });
+areas = await initAreas({ selection, onNext: () => navigate(2), onError: showError });
 
-const filters = initFilters({ onBack: () => goToStep(1), onNext: () => { goToStep(3); results.show(); } });
-const results = initResults({ selection, getFilters: filters.getFilters, getMailer: filters.getMailer, onBack: () => goToStep(2), onError: showError, isUpdating: updateBanner.isRunning });
+const filters = initFilters({ onBack: () => navigate(1), onNext: () => navigate(3) });
+results = initResults({ selection, getFilters: filters.getFilters, getMailer: filters.getMailer, onBack: () => navigate(2), onError: showError, isUpdating: updateBanner.isRunning });
+updateStepBar();
