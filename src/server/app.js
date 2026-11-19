@@ -6,6 +6,8 @@ import { openHandle } from '../db/handle.js';
 import { resolveZips } from '../search/resolve.js';
 import { countLicenses, iterateAddresses, iterateLicenses } from '../search/query.js';
 import { writeCsv } from '../search/csv.js';
+import { lookup } from '../search/lookup.js';
+import { nameKey } from '../db/name-key.js';
 import { MAILER_COLUMNS, countAddresses, groupByAddress } from '../search/mailer.js';
 import { readStatus } from '../update/status.js';
 
@@ -66,6 +68,46 @@ function parseSearch(geoDb, body) {
     throw new HttpError(400, { error: `Too many ZIP codes (max ${MAX_ZIPS})` });
   }
   return { zips: resolved.zips, filters: normalized, mailer };
+}
+
+const LOOKUP_FIELDS = ['call', 'name', 'street', 'city', 'county', 'zip'];
+const bad = (error) => new HttpError(400, { error });
+const str = (v) => (typeof v === 'string' ? v : '');
+
+// Checks a /api/lookup query string; returns { by, q, state, county } ready for lookup().
+function parseLookup(geoDb, query) {
+  const by = str(query.by);
+  if (!LOOKUP_FIELDS.includes(by)) throw bad(`Search by must be one of: ${LOOKUP_FIELDS.join(', ')}`);
+  const q = str(query.q).trim();
+  const state = str(query.state).trim().toUpperCase();
+  const county = str(query.county).trim();
+  const textOk = q.length >= 2 && q.length <= 60;
+  switch (by) {
+    case 'call': {
+      const call = q.toUpperCase();
+      if (!/^[A-Z0-9]{3,10}$/.test(call)) throw bad('Enter a call sign');
+      return { by, q: call };
+    }
+    case 'name':
+      if (!textOk) throw bad('Enter at least 2 characters');
+      if (nameKey(q) === '') throw bad('Enter a name with letters');
+      return { by, q };
+    case 'street':
+      if (!textOk) throw bad('Enter at least 2 characters');
+      return { by, q };
+    case 'city':
+      if (!/^[A-Z]{2}$/.test(state)) throw bad('Pick a state');
+      if (q.length < 1 || q.length > 60) throw bad('Enter a city');
+      return { by, q, state };
+    case 'zip':
+      if (!/^\d{5}$/.test(q)) throw bad('Enter a 5-digit ZIP code');
+      return { by, q };
+    default: // county
+      if (!/^\d{5}$/.test(county) || resolveZips(geoDb, { counties: [county] }).zips.length === 0) {
+        throw bad('Pick a county');
+      }
+      return { by, county };
+  }
 }
 
 export function createApp({
@@ -150,6 +192,10 @@ export function createApp({
       )
       .all(stateParam(req));
     res.json(rows.map((r) => ({ ...r, hasShape: !!r.hasShape })));
+  });
+
+  app.get('/api/lookup', (req, res) => {
+    res.json(lookup(req.db, parseLookup(req.db, req.query)));
   });
 
   app.post('/api/search', (req, res) => {

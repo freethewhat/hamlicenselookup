@@ -33,5 +33,10 @@ export const getStates = () => getJson('/api/states');
 export const getCounties = (state) => getJson(`/api/counties?state=${encodeURIComponent(state)}`);
 export const getZips = (state) => getJson(`/api/zips?state=${encodeURIComponent(state)}`);
 export const getGeoJson = (state, mode) => getJson(`/geo/${encodeURIComponent(state)}/${mode === 'county' ? 'counties' : 'zips'}.geojson`);
+// params: { by, q, state, county }; empty values are left out of the URL.
+export const lookupLicenses = (params) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v));
+  return getJson(`/api/lookup?${qs}`);
+};
 export const search = async (body) => (await post('/api/search', body)).json();
 export const exportCsv = async (body) => (await post('/api/export', body)).blob();
