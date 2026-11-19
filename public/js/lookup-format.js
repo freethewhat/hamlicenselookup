@@ -35,11 +35,12 @@ export function lookupCountMessage(count, shown) {
 
 const KEYS = ['by', 'q', 'state', 'county'];
 
-// Reads location.search. An unknown or missing `by` falls back to call sign.
+// Reads location.search. An unknown or missing `by` falls back to call sign with nothing filled in.
 export function paramsFromSearch(search) {
   const sp = new URLSearchParams(search);
   const p = Object.fromEntries(KEYS.map((k) => [k, sp.get(k) ?? '']));
-  if (!BY_FIELDS.some(([by]) => by === p.by)) p.by = 'call';
+  // An unknown field means the rest of the URL can't be trusted either: start empty on call sign.
+  if (!BY_FIELDS.some(([by]) => by === p.by)) return { by: 'call', q: '', state: '', county: '' };
   return p;
 }
 
@@ -61,4 +62,9 @@ export function onlyUsedParams({ by, q, state, county }) {
     state: by === 'city' || by === 'county' ? state : '',
     county: by === 'county' ? county : '',
   };
+}
+
+// The county picker must list the counties of the state shown. loadedFor is the state they were loaded for.
+export function needCountyLoad({ by, state, loadedFor }) {
+  return by === 'county' && state !== loadedFor;
 }

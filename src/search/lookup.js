@@ -22,6 +22,11 @@ function where(db, { by, q = '', state = '', county = '' }) {
         params.rest = nameKey(words.slice(1).join(''));
         terms.push(`(l.first LIKE @first ESCAPE '\\' AND ${keyPrefix('rest')})`);
       }
+      if (words.length > 2) {
+        // "john q smith", "mary ann smith": first word and last word, skipping what is between.
+        params.lastWord = nameKey(words.at(-1));
+        terms.push(`(l.first LIKE @first ESCAPE '\\' AND ${keyPrefix('lastWord')})`);
+      }
       terms.push("(l.applicant_type <> 'I' AND l.entity_name LIKE @ent ESCAPE '\\')");
       return { sql: `(${terms.join(' OR ')})`, params };
     }

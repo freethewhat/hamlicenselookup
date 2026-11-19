@@ -5,7 +5,7 @@ import { createCountyCombobox } from './county-combobox.js';
 import { countyChipLabel, displayAddress, displayZip } from './format.js';
 import {
   BY_FIELDS, BY_STORAGE_KEY, fccLicenseUrl, hasQuery, lookupCells, lookupCountMessage, lookupName,
-  onlyUsedParams, paramsFromSearch, searchFromParams, statusWord,
+  needCountyLoad, onlyUsedParams, paramsFromSearch, searchFromParams, statusWord,
 } from './lookup-format.js';
 import { dataLoadingNotice } from './status-format.js';
 import { initUpdateBanner } from './update-banner.js';
@@ -22,6 +22,7 @@ const TEXT_FIELDS = {
 
 let county = null; // { geoid, name, state } picked in the county field
 let counties = [];
+let countiesFor = null; // the state `counties` belongs to
 
 function showError(message) {
   const el = $('banner-error');
@@ -51,6 +52,7 @@ function showPickedCounty() {
 
 async function loadCounties(state) {
   counties = [];
+  countiesFor = state;
   combo.setCounties([]);
   if (!state) return;
   try {
@@ -75,10 +77,8 @@ async function fillForm(p) {
   $('lookup-by').value = p.by;
   $('lookup-q').value = p.by === 'county' ? '' : p.q;
   const state = p.by === 'city' || p.by === 'county' ? p.state : '';
-  if ($('lookup-state').value !== state || (p.by === 'county' && counties.length === 0)) {
-    $('lookup-state').value = state;
-    if (p.by === 'county') await loadCounties(state);
-  }
+  $('lookup-state').value = state;
+  if (needCountyLoad({ by: p.by, state, loadedFor: countiesFor })) await loadCounties(state);
   county = p.by === 'county' ? counties.find((c) => c.geoid === p.county) ?? null : null;
   showPickedCounty();
   showFields(p.by);
@@ -229,12 +229,14 @@ $('lookup-by').replaceChildren(...BY_FIELDS.map(([value, label]) => new Option(l
 $('lookup-by').addEventListener('change', () => {
   const by = $('lookup-by').value;
   showFields(by);
-  if (by === 'county' && $('lookup-state').value && counties.length === 0) loadCounties($('lookup-state').value);
+  const state = $('lookup-state').value;
+  if (needCountyLoad({ by, state, loadedFor: countiesFor })) loadCounties(state);
 });
 $('lookup-state').addEventListener('change', () => {
   county = null;
   showPickedCounty();
-  if ($('lookup-by').value === 'county') loadCounties($('lookup-state').value);
+  const state = $('lookup-state').value;
+  if (needCountyLoad({ by: $('lookup-by').value, state, loadedFor: countiesFor })) loadCounties(state);
 });
 
 $('lookup-form').addEventListener('submit', (e) => {

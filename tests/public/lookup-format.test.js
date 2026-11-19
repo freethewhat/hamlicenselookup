@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BY_FIELDS, BY_STORAGE_KEY, statusWord, lookupName, sinceDate, lookupCells, fccLicenseUrl,
-  lookupCountMessage, paramsFromSearch, searchFromParams, hasQuery, onlyUsedParams,
+  lookupCountMessage, paramsFromSearch, searchFromParams, hasQuery, onlyUsedParams, needCountyLoad,
 } from '../../public/js/lookup-format.js';
 
 test('BY_FIELDS lists the six fields with labels, call sign first', () => {
@@ -53,7 +53,7 @@ test('lookupCountMessage', () => {
 });
 
 test('paramsFromSearch defaults to call with empty values', () => {
-  assert.deepEqual(paramsFromSearch('?by=nope&q=x'), { by: 'call', q: 'x', state: '', county: '' });
+  assert.deepEqual(paramsFromSearch('?by=nope&q=x&state=MT'), { by: 'call', q: '', state: '', county: '' });
   assert.deepEqual(paramsFromSearch(''), { by: 'call', q: '', state: '', county: '' });
   assert.deepEqual(paramsFromSearch('?by=county&state=MT&county=30063'), { by: 'county', q: '', state: 'MT', county: '30063' });
 });
@@ -78,4 +78,12 @@ test('onlyUsedParams blanks the values the field does not use', () => {
   assert.deepEqual(onlyUsedParams(all), { by: 'county', q: '', state: 'MT', county: '30063' });
   assert.deepEqual(onlyUsedParams({ ...all, by: 'city' }), { by: 'city', q: 'K7AAA', state: 'MT', county: '' });
   assert.deepEqual(onlyUsedParams({ ...all, by: 'call' }), { by: 'call', q: 'K7AAA', state: '', county: '' });
+});
+
+test('needCountyLoad reloads counties when the state they belong to differs', () => {
+  assert.equal(needCountyLoad({ by: 'county', state: 'ID', loadedFor: 'MT' }), true);
+  assert.equal(needCountyLoad({ by: 'county', state: 'MT', loadedFor: 'MT' }), false);
+  assert.equal(needCountyLoad({ by: 'county', state: 'MT', loadedFor: null }), true);
+  assert.equal(needCountyLoad({ by: 'county', state: '', loadedFor: 'MT' }), true);
+  assert.equal(needCountyLoad({ by: 'city', state: 'ID', loadedFor: 'MT' }), false);
 });

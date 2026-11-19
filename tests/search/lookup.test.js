@@ -118,3 +118,11 @@ test('older licenses of the same holder show newest first', () => withDb((db) =>
   ins.run(12, '2006-01-01');
   assert.deepEqual(lookup(db, { by: 'call', q: 'K7ZZZ' }).rows.map((r) => r.usid), [11, 12, 10]);
 }));
+
+test('name: first name plus last word, skipping middle names', () => withDb((db) => {
+  const ins = db.prepare("INSERT INTO licenses (usid, call, status, applicant_type, first, mi, last, last_key) VALUES (?, ?, 'A', 'I', ?, ?, 'ZZSMITH', 'ZZSMITH')");
+  ins.run(20, 'K7JQS', 'JOHN', 'Q');
+  ins.run(21, 'K7MAS', 'MARY ANN', '');
+  assert.deepEqual(calls(db, { by: 'name', q: 'john q zzsmith' }), ['K7JQS']);
+  assert.deepEqual(calls(db, { by: 'name', q: 'mary ann zzsmith' }), ['K7MAS']);
+}));

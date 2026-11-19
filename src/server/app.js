@@ -84,7 +84,7 @@ function parseLookup(geoDb, query) {
   const textOk = q.length >= 2 && q.length <= 60;
   switch (by) {
     case 'call': {
-      const call = q.toUpperCase();
+      const call = q.replace(/\s+/g, '').toUpperCase(); // "K7 AAA" is K7AAA
       if (!/^[A-Z0-9]{3,10}$/.test(call)) throw bad('Enter a call sign');
       return { by, q: call };
     }

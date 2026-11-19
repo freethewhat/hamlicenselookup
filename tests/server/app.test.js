@@ -108,6 +108,8 @@ test('lookup by call trims and upper-cases', async () => {
     const body = await res.json();
     assert.equal(body.count, 1);
     assert.equal(body.rows[0].call, 'K7AAA');
+    const spaced = await (await getLookup(base, 'by=call&q=k7%20aaa')).json();
+    assert.equal(spaced.count, 1);
   });
 });
 
