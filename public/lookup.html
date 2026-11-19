@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Look up a ham · Ham License Finder</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <a id="skip-link" class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="header-top">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <h1><a class="brand-link" href="/">Ham License Finder</a></h1>
+      </div>
+      <nav class="site-nav" aria-label="Site">
+        <ul>
+          <li><a href="/">Mailing list</a></li>
+          <li><a href="/lookup.html" aria-current="page">Lookup</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <div id="banner-stale" class="banner warn" hidden>
+    The license data is more than 10 days old, so recent changes may be missing.
+  </div>
+  <div id="banner-error" class="banner error" role="alert" hidden></div>
+
+  <main id="main" tabindex="-1">
+    <section class="step" aria-labelledby="lookup-title">
+      <h2 id="lookup-title" tabindex="-1">Look up a ham</h2>
+      <p class="lead">Find licenses by call sign, name, street, city, county, or ZIP code.</p>
+
+      <form id="lookup-form" class="lookup-form" novalidate>
+        <div class="field">
+          <label for="lookup-by">Search by</label>
+          <select id="lookup-by"></select>
+        </div>
+
+        <div class="field" id="lookup-state-field" hidden>
+          <label for="lookup-state">State</label>
+          <select id="lookup-state"><option value="">Pick a state…</option></select>
+        </div>
+
+        <div class="field" id="lookup-q-field">
+          <label for="lookup-q" id="lookup-q-label">Call sign</label>
+          <input id="lookup-q" type="text" autocomplete="off" spellcheck="false" aria-describedby="lookup-hint">
+          <p class="hint" id="lookup-hint">For example K7ABC.</p>
+        </div>
+
+        <div class="field" id="lookup-county-field" hidden>
+          <label for="lookup-county">County</label>
+          <div class="combo">
+            <input id="lookup-county" type="text" autocomplete="off"
+              role="combobox" aria-expanded="false" aria-controls="lookup-county-listbox" aria-autocomplete="list"
+              aria-describedby="lookup-county-hint">
+            <ul id="lookup-county-listbox" role="listbox" aria-label="Matching counties" hidden></ul>
+          </div>
+          <span id="lookup-county-count" role="status" class="visually-hidden"></span>
+          <p class="hint" id="lookup-county-hint">Pick a state first. Type a name, then use the arrow keys and Enter, or click a county.</p>
+          <p class="hint" id="lookup-county-picked"></p>
+        </div>
+
+        <div class="row">
+          <button type="submit" class="primary">Search</button>
+        </div>
+      </form>
+
+      <p id="lookup-count" class="result-count" role="status"></p>
+      <div class="table-wrap" role="region" tabindex="0" aria-labelledby="lookup-caption" hidden>
+        <table id="lookup-table">
+          <caption id="lookup-caption">Matching licenses. Choose a call sign to see details.</caption>
+          <thead>
+            <tr><th scope="col">Call</th><th scope="col">Name</th><th scope="col">Class</th><th scope="col">City</th><th scope="col">Status</th><th scope="col">Since</th></tr>
+          </thead>
+          <tbody id="lookup-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Data as of: <span id="data-as-of">unknown</span></p>
+    <p class="credits">
+      License data: FCC Universal Licensing System. ZIP and county shapes: US Census Bureau.
+      Place names: GeoNames (CC-BY 4.0).
+    </p>
+    <p class="project-links">
+      <a href="https://github.com/freethewhat/hamlicenselookup">Source code on GitHub</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://github.com/freethewhat/hamlicenselookup/issues/new">Report a problem</a>
+    </p>
+  </footer>
+
+  <script type="module" src="/js/lookup.js"></script>
+</body>
+</html>

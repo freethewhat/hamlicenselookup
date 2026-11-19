@@ -99,3 +99,60 @@ test('each step in the step bar is a real button so keyboard users can jump to i
     assert.match(html, new RegExp(`<li data-step="${n}"[^>]*>\\s*<button type="button" class="step-link"`));
   }
 });
+
+// ---- Lookup page (public/lookup.html)
+const lookupUrl = new URL('../../public/lookup.html', import.meta.url);
+const readLookup = () => readFileSync(lookupUrl, 'utf8');
+
+test('lookup page: skip link, main, labelled h2', () => {
+  const lk = readLookup();
+  assert.match(lk, /<html lang="en">/);
+  assert.match(lk, /<body>\s*<a [^>]*id="skip-link"[^>]*href="#main"/);
+  assert.match(lk, /<main [^>]*id="main"[^>]*tabindex="-1"/);
+  assert.match(lk, /<section [^>]*aria-labelledby="lookup-title"/);
+  assert.match(lk, /<h2 [^>]*id="lookup-title"[^>]*tabindex="-1"/);
+  assert.doesNotMatch(lk, /role="application"/);
+});
+
+test('lookup page: every control has a label and hints are tied', () => {
+  const lk = readLookup();
+  const labelled = new Set(attrValues(lk, /<label [^>]*for="([^"]+)"/g));
+  const controls = attrValues(lk, /<(?:input|select|textarea)\b[^>]*\bid="([^"]+)"/g);
+  for (const id of ['lookup-by', 'lookup-q', 'lookup-state', 'lookup-county']) assert.ok(controls.includes(id), id);
+  for (const id of controls) assert.ok(labelled.has(id), id);
+  assert.match(tagWithId(lk, 'lookup-q'), /aria-describedby="[^"]*\blookup-hint\b/);
+  assert.match(tagWithId(lk, 'lookup-county'), /role="combobox"/);
+  const refs = attrValues(lk, /aria-(?:describedby|labelledby|controls)="([^"]+)"/g).flatMap((v) => v.split(' '));
+  for (const ref of refs) assert.match(lk, new RegExp(`id="${ref}"`), ref);
+});
+
+test('lookup page: live elements have one live role', () => {
+  const lk = readLookup();
+  for (const id of ['banner-error', 'lookup-count', 'lookup-county-count']) {
+    assert.equal(liveRoles(tagWithId(lk, id)), 1, id);
+  }
+});
+
+test('lookup page: table has caption, 6 column scopes, labelled scroll box', () => {
+  const lk = readLookup();
+  assert.match(lk, /<caption id="lookup-caption"/);
+  assert.equal(count(lk, /<th scope="col">/g), 6);
+  assert.match(lk, /class="table-wrap"[^>]*tabindex="0"[^>]*aria-labelledby="lookup-caption"/);
+  assert.match(lk, /class="table-wrap"[^>]*role="region"/);
+});
+
+test('both pages have the site nav with aria-current on their own link', () => {
+  const nav = (s) => s.match(/<nav [^>]*aria-label="Site"[^>]*>([\s\S]*?)<\/nav>/)?.[1] ?? '';
+  assert.match(nav(html), /<a href="\/" aria-current="page">Mailing list<\/a>/);
+  assert.match(nav(html), /<a href="\/lookup.html">Lookup<\/a>/);
+  const lk = readLookup();
+  assert.match(nav(lk), /<a href="\/">Mailing list<\/a>/);
+  assert.match(nav(lk), /<a href="\/lookup.html" aria-current="page">Lookup<\/a>/);
+});
+
+test('lookup page loads nothing from other hosts', () => {
+  const lk = readLookup();
+  const external = attrValues(lk, /\b(?:src|href)="(https?:[^"]+)"/g)
+    .filter((u) => !u.startsWith('https://github.com/freethewhat/hamlicenselookup'));
+  assert.deepEqual(external, []);
+});

@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import { SCHEMA_SQL, INDEX_SQL, LICENSE_SCHEMA_VERSION } from '../../src/db/schema.js';
 import { checkSchemas } from '../../src/db/handle.js';
 import { createApp } from '../../src/server/app.js';
+import { nameKey } from '../../src/db/name-key.js';
 import { makeGeoDb } from '../helpers/geo-fixture.js';
 
 const COLS = ['usid', 'call', 'status', 'applicant_type', 'last', 'first', 'zip', 'zip5', 'trustee_call',
@@ -26,8 +27,8 @@ function makeLicenseDb(path, { version = LICENSE_SCHEMA_VERSION, asOf = '2026-11
   meta.run('schema_version', String(version));
   meta.run('data_as_of', asOf);
   meta.run('license_count', String(count));
-  const ins = db.prepare(`INSERT INTO licenses (${COLS.join(',')}) VALUES (${COLS.map(() => '?').join(',')})`);
-  for (const r of ROWS) ins.run(r);
+  const ins = db.prepare(`INSERT INTO licenses (${COLS.join(',')}, last_key) VALUES (${COLS.map(() => '?').join(',')}, ?)`);
+  for (const r of ROWS) ins.run(...r, nameKey(r[COLS.indexOf('last')]));
   db.close();
 }
 
@@ -95,6 +96,61 @@ test('search, export, and lookup routes', async () => {
     const zips = await (await fetch(`${base}/api/zips?state=MT`)).json();
     assert.deepEqual(zips[0], { zip: '59801', countyGeoid: '30063', countyName: 'Missoula', hasShape: true });
     assert.equal((await fetch(`${base}/api/counties`)).status, 400);
+  });
+});
+
+const getLookup = (base, qs) => fetch(`${base}/api/lookup?${qs}`);
+
+test('lookup by call trims and upper-cases', async () => {
+  await withApp(fixture, {}, async (base) => {
+    const res = await getLookup(base, 'by=call&q=%20%20k7aaa%20');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.count, 1);
+    assert.equal(body.rows[0].call, 'K7AAA');
+    const spaced = await (await getLookup(base, 'by=call&q=k7%20aaa')).json();
+    assert.equal(spaced.count, 1);
+  });
+});
+
+test('lookup by name', async () => {
+  await withApp(fixture, {}, async (base) => {
+    const body = await (await getLookup(base, 'by=name&q=tester')).json();
+    assert.equal(body.count, 3);
+  });
+});
+
+test('lookup validation messages', async () => {
+  await withApp(fixture, {}, async (base) => {
+    for (const [qs, error] of [
+      ['by=foo&q=x', 'Search by must be one of: call, name, street, city, county, zip'],
+      ['q=K7AAA', 'Search by must be one of: call, name, street, city, county, zip'],
+      ['by=call&q=k', 'Enter a call sign'],
+      ['by=name&q=a', 'Enter at least 2 characters'],
+      ["by=name&q=''", 'Enter a name with letters'],
+      ['by=street&q=%20x%20', 'Enter at least 2 characters'],
+      [`by=street&q=${'x'.repeat(61)}`, 'Enter at least 2 characters'],
+      ['by=city&q=Missoula', 'Pick a state'],
+      ['by=city&q=&state=MT', 'Enter a city'],
+      ['by=zip&q=5980', 'Enter a 5-digit ZIP code'],
+      ['by=county&county=99999', 'Pick a county'],
+      ['by=county&county=abc', 'Pick a county'],
+    ]) {
+      const res = await getLookup(base, qs);
+      assert.equal(res.status, 400, qs);
+      assert.deepEqual(await res.json(), { error }, qs);
+    }
+    const ok = await (await getLookup(base, 'by=city&q=missoula&state=mt')).json();
+    assert.equal(ok.count, 0); // fixture rows have no city; the request itself is valid
+    assert.equal((await (await getLookup(base, 'by=county&county=30063')).json()).count, 3);
+  });
+});
+
+test('lookup returns 503 while data is missing', async () => {
+  await withApp(null, {}, async (base) => {
+    const res = await getLookup(base, 'by=call&q=K7AAA');
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), { error: 'Data not loaded yet' });
   });
 });
 
