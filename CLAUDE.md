@@ -48,7 +48,7 @@ Each file stores `meta.schema_version`. Bump `LICENSE_SCHEMA_VERSION` (`src/db/s
 
 **First-license rule (`src/fcc/classify.js`).** Fills `first_license_date` and `upgrade_date` at load time. `docs/verification.md` checks it against real data.
 
-**Search (`src/search/`).** `resolve.js` turns picked ZIPs and counties into a ZIP list (max 5000). `query.js` counts and iterates matches. `csv.js` streams the export. Request validation is `parseSearch` in `src/server/app.js`. The CSP there allows only self plus OSM tiles.
+**Search (`src/search/`).** `resolve.js` turns picked ZIPs and counties into a ZIP list (max 5000). `query.js` counts and iterates matches. `csv.js` streams the export. `lookup.js` serves the Lookup page (`GET /api/lookup`, one field at a time; name search uses the `last_key` column). Request validation is `parseSearch` and `parseLookup` in `src/server/app.js`. The CSP there allows only self plus OSM tiles.
 
 ## Design docs
 

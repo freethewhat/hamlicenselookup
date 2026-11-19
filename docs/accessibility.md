@@ -2,6 +2,29 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
+## Change check: lookup page, 2026-11-18
+
+Spec: `docs/superpowers/specs/2026-11-18-ham-lookup-design.md`. Adds `public/lookup.html` and a two-link site nav in the header of both pages.
+
+**Result: no known WCAG 2.2 AA failures.**
+
+Tools: Playwright MCP browser (Chromium) at 1100 px and 320 px wide, on a copy of the full US data. No axe run for this change.
+
+| Check | Result |
+|---|---|
+| Labels | Every control has a `<label for>`. The text field's label and hint change with "Search by". The hint is tied with `aria-describedby`. `tests/public/markup.test.js` checks this. |
+| Site nav | `<nav aria-label="Site">`. The current page's link has `aria-current="page"` and a slate underline bar, not color alone. Links are 44 px tall. |
+| Keyboard | Call sign search runs on Enter. The county field is the same ARIA combobox as the home page (arrow keys, Enter). Each call sign is a button with `aria-expanded` that opens its details row. |
+| Live messages | `lookup-count` (`role="status"`) says the match count once. Errors go to `banner-error` (`role="alert"`). |
+| Table | Caption, six `<th scope="col">`, inside the focusable, labelled scroll box used on step 3. |
+| Contrast | Only existing tokens are used (`--slate`, `--ink`, `--muted` on `--bg` and `--surface`); all pairs are in `tests/public/theme.test.js`. |
+| 320 px (400% zoom) | No sideways page scroll on either page. The nav wraps under the title. Only the results table scrolls in its box. |
+| Back and Forward | Each search adds a history entry. Back and Forward restore the form and the results. |
+
+Known: after a county is picked, the combobox's live text says "Added <county>." (wording shared with the home page).
+
+Not checked: real screen reader, Firefox, Safari.
+
 ## Change check: footer GitHub links, 2026-11-14
 
 Adds two links at the end of the footer: "Source code on GitHub" and "Report a problem" (opens a new GitHub issue).

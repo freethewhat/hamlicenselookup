@@ -18,10 +18,14 @@ The hosted site is free for any ham club. Run your own copy only if you want to 
 
 Found a bug or want a feature? [Open an issue](https://github.com/freethewhat/hamlicenselookup/issues/new).
 
+### Look up one ham
+
+The **Lookup** page (`/lookup.html`, linked in the header) finds licenses by call sign, name, street, city, county, or ZIP code. It shows up to 100 matches, including expired and cancelled licenses. Choose a call sign to see the full record and a link to the same license on the FCC site. The search is in the page address, so you can bookmark it.
+
 ## About the data and your privacy
 
 - All license data is public. The FCC publishes it for anyone to download.
-- The site does not save your searches. It sets no cookies and has no analytics.
+- The site does not save your searches. It sets no cookies and has no analytics. The Lookup page remembers only which field you last searched by, in your own browser.
 - Use the list to contact hams about your club. Do not use it for spam or to sell things.
 
 ## Run your own copy with Docker
