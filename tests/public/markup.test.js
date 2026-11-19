@@ -93,3 +93,9 @@ test('footer links to the repo and to a new GitHub issue', () => {
   assert.match(footer, /<a href="https:\/\/github\.com\/[\w-]+\/[\w-]+">[^<]+<\/a>/);
   assert.match(footer, /<a href="https:\/\/github\.com\/[\w-]+\/[\w-]+\/issues\/new">Report a problem<\/a>/);
 });
+
+test('each step in the step bar is a real button so keyboard users can jump to it', () => {
+  for (const n of [1, 2, 3]) {
+    assert.match(html, new RegExp(`<li data-step="${n}"[^>]*>\\s*<button type="button" class="step-link"`));
+  }
+});

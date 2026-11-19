@@ -125,6 +125,12 @@ Walked the whole flow with the keyboard only: skip link, state picker, state chi
 
 All buttons are at least 42 px tall (the Map/Form and ZIP/county toggles). Everything else is at least 44 px. WCAG 2.2 AA needs 24 px. Checkboxes are 20 px, but their labels are clickable and at least 44 px tall.
 
+### Step bar and browser history (2026-11-18)
+
+- Each step in the step bar is now a `<button>`. Steps 2 and 3 stay disabled until an area is picked, the same rule as the Next button. The current step keeps `aria-current="step"`.
+- Clicking a step, Next, or Back adds a browser history entry. Browser Back and Forward move between steps. If the picked areas were cleared, Back or Forward to step 2 or 3 goes to step 1.
+- Checked in Chromium with Playwright: step bar click, Back, Forward, focus moves to the new step's heading. Button targets are 44 px tall. No new colors.
+
 ### Known limits
 
 - **Map shapes work only with a mouse or touch.** They are drawn on a canvas and cannot be reached by keyboard. The **Form** view picks the same areas by keyboard and screen reader, and a hint above the map says so. WCAG allows this because the Form view does the same job.
