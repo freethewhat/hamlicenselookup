@@ -9,7 +9,7 @@ Ham License Finder: pick ZIP codes or counties, filter for recent first-time ham
 - No framework, bundler, or build step. Plain HTML, CSS, and JS modules in `public/`. ES modules everywhere.
 - The page loads nothing from third-party servers except OpenStreetMap tiles. Leaflet and fonts are served from `node_modules` at `/vendor/...`. No CDNs, no Google Fonts.
 - The site is for any ham club. Never put a specific club's name or call sign in the repo. `tests/repo-hygiene.test.js` enforces this.
-- Every page change must stay WCAG 2.2 AA. The rules are in `public/CLAUDE.md`.
+- Every page change must stay WCAG 2.2 AA. The rules are in `public/CLAUDE.md`. Every UI or UX change needs the full check there (axe scan, keyboard pass, 320 px and text spacing, recorded in `docs/accessibility.md`) before a PR.
 - `npm test` and `npm run lint` must pass before a PR.
 
 ## Commands

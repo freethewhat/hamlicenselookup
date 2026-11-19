@@ -2,23 +2,38 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
-## Change check: lookup page, 2026-11-18
+## Change check: lookup page and title link, 2026-11-19
 
-Spec: `docs/superpowers/specs/2026-11-18-ham-lookup-design.md`. Adds `public/lookup.html` and a two-link site nav in the header of both pages.
+Spec: `docs/superpowers/specs/2026-11-18-ham-lookup-design.md`. Adds `public/lookup.html`, a two-link site nav in the header of both pages, and makes the "Ham License Finder" title a link to the home page.
 
 **Result: no known WCAG 2.2 AA failures.**
 
-Tools: Playwright MCP browser (Chromium) at 1100 px and 320 px wide, on a copy of the full US data. No axe run for this change.
+Tools: axe-core 4.10.2 (rule tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, best-practice`) in the Playwright MCP browser (Chromium), loaded by the method in "How to repeat the audit". Full US data (`./data`, schema v2). The page's Content Security Policy stayed on.
+
+| axe state | Violations |
+|---|---|
+| Home, step 1, 1100 px and 320 px (new header) | 0 |
+| Lookup, empty | 0 |
+| Lookup, call sign results | 0 |
+| Lookup, details row open | 0 |
+| Lookup, name results | 0 |
+| Lookup, city (state field shown) | 0 |
+| Lookup, county list open | 0 |
+| Lookup, no matches | 0 |
+| Lookup, error banner (400) | 0 |
+| Lookup, results at 320 px | 0 |
+
+axe "needs review" (color contrast it could not compute), checked by hand: table cells inside the sideways-scrolling box at 320 px; the county hints under the open county list (covered by design); the map items already listed in the 2026-11-13 audit. All of that text uses token pairs in `tests/public/theme.test.js`.
 
 | Check | Result |
 |---|---|
-| Labels | Every control has a `<label for>`. The text field's label and hint change with "Search by". The hint is tied with `aria-describedby`. `tests/public/markup.test.js` checks this. |
-| Site nav | `<nav aria-label="Site">`. The current page's link has `aria-current="page"` and a slate underline bar, not color alone. Links are 44 px tall. |
-| Keyboard | Call sign search runs on Enter. The county field is the same ARIA combobox as the home page (arrow keys, Enter). Each call sign is a button with `aria-expanded` that opens its details row. |
-| Live messages | `lookup-count` (`role="status"`) says the match count once. Errors go to `banner-error` (`role="alert"`). |
-| Table | Caption, six `<th scope="col">`, inside the focusable, labelled scroll box used on step 3. |
-| Contrast | Only existing tokens are used (`--slate`, `--ink`, `--muted` on `--bg` and `--surface`); all pairs are in `tests/public/theme.test.js`. |
-| 320 px (400% zoom) | No sideways page scroll on either page. The nav wraps under the title. Only the results table scrolls in its box. |
+| Keyboard (Tab only) | Lookup: skip link, title link, Mailing list, Lookup, Search by, text box, Search, table scroll box, first call sign button. Home: skip link, title link, Mailing list, Lookup, then the step bar as before. Every stop shows the 3 px slate ring. Enter on a call sign opens its details, `aria-expanded` turns true, focus stays on the button, and the next Tab goes to the FCC link. |
+| Labels | Every control has a `<label for>`. The text field's label and hint change with "Search by". `tests/public/markup.test.js` checks this. |
+| Site nav and title link | `<nav aria-label="Site">`. The current page's link has `aria-current="page"` and a slate underline bar, not color alone. The title link's name is the site name. |
+| Target size | Nav links 44 px, title link 37 px, form controls and call sign buttons 44 px. |
+| Live messages | `lookup-count` (`role="status"`) and `banner-error` (`role="alert"`), one live role each. |
+| 320 px (400% zoom) | No sideways page scroll on either page. Only the results table scrolls in its box. |
+| Text spacing override at 320 px | Lookup (call results, county field) and home: no sideways scroll, no cut-off labels, hints, buttons, or headings. |
 | Back and Forward | Each search adds a history entry. Back and Forward restore the form and the results. |
 
 Known: after a county is picked, the combobox's live text says "Added <county>." (wording shared with the home page).
@@ -175,6 +190,7 @@ All buttons are at least 42 px tall (the Map/Form and ZIP/county toggles). Every
    const res = await page.evaluate(() => axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa'] } }));
    ```
    Or use a browser extension such as axe DevTools.
-4. Scan every state in the table above. Wait for step animations to finish before scanning.
+   Use the tag list `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, best-practice`. With the Playwright MCP browser, run this through `browser_run_code_unsafe`.
+4. Scan every state in the table above, and every new state your change adds (each panel, open list, error, empty result, and 320 px). Wait for step animations to finish before scanning.
 5. Do the keyboard, screen-reader, zoom, text-spacing, and reduce-motion checks above.
 6. Update this file with the date, the tools, and what you found.
