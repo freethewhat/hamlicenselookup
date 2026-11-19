@@ -6,6 +6,7 @@ import {
 } from '../fcc/parse.js';
 import { classifyLicense } from '../fcc/classify.js';
 import { SCHEMA_SQL, INDEX_SQL, LICENSE_SCHEMA_VERSION } from './schema.js';
+import { registerNameKey } from './name-key.js';
 
 const BATCH = 10000;
 const MONTHS = {
@@ -112,12 +113,13 @@ export async function loadStage(db, entries, stateSet, hsTable, onProgress) {
 export function licenseInsertSql(filtered) {
   return `INSERT INTO licenses (usid, call, status, service, grant_date, expired_date, cancel_date,
         last_action_date, applicant_type, entity_name, first, mi, last, suffix, street, po_box,
-        city, state, zip, zip5, frn, op_class, prev_call, prev_class, trustee_call)
+        city, state, zip, zip5, frn, op_class, prev_call, prev_class, trustee_call, last_key)
       SELECT hd.usid, hd.call, hd.status, hd.service, hd.grant_date, hd.expired_date,
         hd.cancel_date, hd.last_action_date, en.applicant_type, en.entity_name, en.first,
         en.mi, en.last, en.suffix, en.street, en.po_box, en.city, en.state, en.zip,
         COALESCE(en.zip5, ''), COALESCE(en.frn, ''), COALESCE(am.op_class, ''),
-        COALESCE(am.prev_call, ''), COALESCE(am.prev_class, ''), COALESCE(am.trustee_call, '')
+        COALESCE(am.prev_call, ''), COALESCE(am.prev_class, ''), COALESCE(am.trustee_call, ''),
+        name_key(en.last)
       FROM stage.hd hd
       ${filtered ? 'JOIN' : 'LEFT JOIN'} stage.en en ON en.usid = hd.usid
       LEFT JOIN stage.am am ON am.usid = hd.usid
@@ -256,6 +258,7 @@ export async function loadWeekly(zipPath, outDbPath, opts = {}) {
     const fileDate = parseCountsDate(await readText(await entries.get('counts')()));
 
     db = new Database(outDbPath);
+    registerNameKey(db);
     // The file is only swapped in after success, so durability during the build is moot.
     // Rollback journal (DELETE) is set once the build is finished: sidecar files belong to the
     // path, so a WAL-mode file swapped in by rename could replay a stale -wal.

@@ -1,5 +1,5 @@
 // Bump on any change to the licenses.db layout or the derived-column rules.
-export const LICENSE_SCHEMA_VERSION = 1;
+export const LICENSE_SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE licenses (
@@ -8,7 +8,7 @@ CREATE TABLE licenses (
   applicant_type TEXT, entity_name TEXT, first TEXT, mi TEXT, last TEXT, suffix TEXT,
   street TEXT, po_box TEXT, city TEXT, state TEXT, zip TEXT, zip5 TEXT, frn TEXT,
   op_class TEXT, prev_call TEXT, prev_class TEXT, trustee_call TEXT,
-  first_license_date TEXT, upgrade_date TEXT, earliest_event_date TEXT);
+  first_license_date TEXT, upgrade_date TEXT, earliest_event_date TEXT, last_key TEXT);
 CREATE TABLE history (usid INTEGER NOT NULL, date TEXT, code TEXT);
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 `;
@@ -19,4 +19,8 @@ CREATE INDEX lic_frn ON licenses(frn);
 CREATE INDEX lic_first ON licenses(first_license_date);
 CREATE INDEX lic_upg ON licenses(upgrade_date);
 CREATE INDEX hist_usid ON history(usid);
+CREATE INDEX lic_call ON licenses(call);
+CREATE INDEX lic_last_key ON licenses(last_key);
+CREATE INDEX lic_city ON licenses(city COLLATE NOCASE);
+CREATE INDEX lic_entity ON licenses(entity_name COLLATE NOCASE);
 `;

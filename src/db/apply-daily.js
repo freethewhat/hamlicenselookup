@@ -3,6 +3,7 @@ import { readZipEntries } from '../fcc/unzip.js';
 import {
   REQUIRED, parseCountsDate, readText, createStage, loadStage, licenseInsertSql, reclassify,
 } from './load-weekly.js';
+import { registerNameKey } from './name-key.js';
 
 const metaValue = (db, key) => db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
 
@@ -26,6 +27,7 @@ export async function applyDaily(zipPath, dbPath, { onProgress } = {}) {
     }
 
     db = new Database(dbPath);
+    registerNameKey(db);
     db.pragma('busy_timeout = 10000'); // readers may briefly hold shared locks
     const appliedThrough = metaValue(db, 'daily_applied_through');
     if (appliedThrough && fileDate <= appliedThrough) return { changed: 0, fileDate, skipped: true };

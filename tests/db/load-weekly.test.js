@@ -66,6 +66,11 @@ test('loadWeekly builds licenses with classification, FRN pass and meta', async 
       assert.equal(a.earliest_event_date, '2026-05-01');
       assert.equal(a.zip5, '59801');
       assert.equal(a.entity_name, 'TESTER, ALPHA');
+      assert.equal(a.last_key, 'TESTER');
+      assert.equal(get('W7DDD').last_key, 'TESTERCLUB');
+      for (const name of ['lic_call', 'lic_last_key', 'lic_city', 'lic_entity']) {
+        assert.ok(db.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name), name);
+      }
       assert.equal(get('K7BBB').first_license_date, '2016-03-02'); // renewal: first issued long ago
       assert.equal(get('K7CCC').upgrade_date, '2026-06-01');
       const d = get('W7DDD');

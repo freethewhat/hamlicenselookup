@@ -83,6 +83,7 @@ test('applyDaily patches a changed license, adds a new one and updates meta', as
       const g = lic(db, 'K7GGG');
       assert.equal(g.first_license_date, '2026-11-09');
       assert.equal(g.entity_name, 'TESTER, GOLF');
+      assert.equal(g.last_key, 'TESTER');
       const m = meta(db);
       assert.equal(m.license_count, '5');
       assert.equal(m.data_as_of, '2026-11-10');
