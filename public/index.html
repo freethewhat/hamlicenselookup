@@ -26,7 +26,7 @@
     <ol class="steps" id="step-bar" aria-label="Steps">
       <li data-step="1" class="active" aria-current="step"><button type="button" class="step-link"><span>1</span> Areas</button></li>
       <li data-step="2"><button type="button" class="step-link" disabled><span>2</span> Filters</button></li>
-      <li data-step="3"><button type="button" class="step-link" disabled><span>3</span> List + export</button></li>
+      <li data-step="3"><button type="button" class="step-link" disabled><span>3</span> Results</button></li>
     </ol>
   </header>
 
@@ -130,20 +130,44 @@
       </div>
     </section>
 
-    <!-- Step 3: list and export -->
+    <!-- Step 3: results as a list or a map, and export -->
     <section id="step-3" class="step" aria-labelledby="step-3-title" hidden>
-      <h2 id="step-3-title" tabindex="-1">Your mailing list</h2>
+      <h2 id="step-3-title" tabindex="-1">Your results</h2>
       <p id="result-count" class="result-count" role="status"></p>
-      <div class="table-wrap" role="region" tabindex="0" aria-labelledby="result-caption" hidden>
-        <table id="result-table" hidden>
-          <caption id="result-caption">Preview of matching hams</caption>
-          <thead>
-            <tr><th scope="col">Call</th><th scope="col">Name</th><th scope="col">Address</th><th scope="col">City</th><th scope="col">ZIP</th><th scope="col">County</th><th scope="col">Class</th><th scope="col">New License</th></tr>
-          </thead>
-          <tbody id="result-rows"></tbody>
-        </table>
+      <div class="toolbar">
+        <div class="toggle" role="group" aria-label="View">
+          <button type="button" id="view-list" aria-pressed="true">List</button>
+          <button type="button" id="view-map-results" aria-pressed="false">Map</button>
+        </div>
       </div>
-      <p id="result-note" class="hint"></p>
+      <div id="results-map-panel" hidden>
+        <p id="map-keys-hint" class="hint">Use the arrow keys to move the map and + or − to zoom.</p>
+        <div id="results-map" role="region" tabindex="0" aria-label="Map of matching hams" aria-describedby="map-keys-hint"></div>
+        <p id="map-status" class="map-status" role="status"></p>
+        <p id="in-view-count" class="hint" role="status"></p>
+        <div class="table-wrap" role="region" tabindex="0" aria-labelledby="in-view-caption" hidden>
+          <table id="in-view-table">
+            <caption id="in-view-caption">Hams in this map view</caption>
+            <thead>
+              <tr><th scope="col">Call</th><th scope="col">Name</th><th scope="col">Class</th><th scope="col">City</th><th scope="col">Look up</th></tr>
+            </thead>
+            <tbody id="in-view-rows"></tbody>
+          </table>
+        </div>
+        <p id="map-optout" class="hint" hidden></p>
+      </div>
+      <div id="results-list-panel">
+        <div class="table-wrap" role="region" tabindex="0" aria-labelledby="result-caption" hidden>
+          <table id="result-table" hidden>
+            <caption id="result-caption">Preview of matching hams</caption>
+            <thead>
+              <tr><th scope="col">Call</th><th scope="col">Name</th><th scope="col">Address</th><th scope="col">City</th><th scope="col">ZIP</th><th scope="col">County</th><th scope="col">Class</th><th scope="col">New License</th></tr>
+            </thead>
+            <tbody id="result-rows"></tbody>
+          </table>
+        </div>
+        <p id="result-note" class="hint"></p>
+      </div>
       <div class="nav split">
         <button type="button" id="back-3">← Back</button>
         <button type="button" id="download-csv" class="primary" disabled>Download CSV</button>

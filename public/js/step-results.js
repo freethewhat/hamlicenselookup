@@ -1,5 +1,6 @@
-// Step 3: count, preview table, and CSV download.
+// Step 3: count, List or Map view, and CSV download.
 import { search, exportCsv } from './api.js';
+import { createResultsMap } from './results-map.js';
 import { countMessage, rowCells } from './format.js';
 import { dataLoadingNotice } from './status-format.js';
 
@@ -23,6 +24,30 @@ export function initResults({ selection, getFilters, getMailer = () => false, on
   let token = 0; // ignores a slow search that was overtaken by a newer one
 
   $('back-3').addEventListener('click', onBack);
+
+  // List / Map toggle. The map is made on first use; leaving the map view stops its polling.
+  let resultsMap = null;
+  function setView(view) {
+    const isMap = view === 'map';
+    $('view-list').setAttribute('aria-pressed', String(!isMap));
+    $('view-map-results').setAttribute('aria-pressed', String(isMap));
+    $('results-list-panel').hidden = isMap;
+    $('results-map-panel').hidden = !isMap;
+    if (isMap) {
+      resultsMap ??= createResultsMap({
+        el: $('results-map'),
+        statusEl: $('map-status'),
+        tableBody: $('in-view-rows'),
+        tableCountEl: $('in-view-count'),
+        onError,
+      });
+      if (body) resultsMap.show(body);
+    } else {
+      resultsMap?.hide();
+    }
+  }
+  $('view-list').addEventListener('click', () => setView('list'));
+  $('view-map-results').addEventListener('click', () => setView('map'));
 
   download.addEventListener('click', async () => {
     if (!body) return;
@@ -54,6 +79,7 @@ export function initResults({ selection, getFilters, getMailer = () => false, on
     const mine = ++token;
     count = 0;
     body = { ...selection.toRequest(), filters: getFilters(), mailer: getMailer() };
+    setView('list'); // a new search starts in List view
     $('result-count').textContent = 'Searching…';
     $('result-note').textContent = '';
     $('result-table').hidden = true;

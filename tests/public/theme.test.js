@@ -28,6 +28,9 @@ const pairs = [
   ['--red-ink', '--red-soft', 4.5], // chip text
   ['--slate', '--surface', 3], ['--slate', '--bg', 3], // focus ring
   ['--line-strong', '--surface', 3], ['--line-strong', '--bg', 3], // input and button borders
+  ['--cluster-ink', '--cluster-fill', 4.5], // count text in a results-map circle
+  ['--cluster-fill', '--map-tile', 3], ['--cluster-fill', '--surface', 3], // circle edge on the map
+  ['--pin-line', '--surface', 3], ['--pin-line', '--map-tile', 3], // pin outline on map tiles
 ];
 test('every text and focus pair meets WCAG AA', () => {
   for (const [fg, bg, min] of pairs) {

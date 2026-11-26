@@ -61,7 +61,7 @@ test('county input is an ARIA combobox and there is no datalist', () => {
 
 test('results table has a caption, column scopes, and a focusable labelled scroll box', () => {
   assert.match(html, /<caption id="result-caption"/);
-  assert.equal(count(html, /<th scope="col">/g), 8);
+  assert.equal(count(html.match(/<table id="result-table"[\s\S]*?<\/table>/)[0], /<th scope="col">/g), 8);
   assert.match(html, /class="table-wrap"[^>]*tabindex="0"[^>]*aria-labelledby="result-caption"/);
   assert.match(html, /class="table-wrap"[^>]*role="region"/);
 });
@@ -77,6 +77,41 @@ test('every form control has a <label for>', () => {
   const controls = attrValues(html, /<(?:input|select|textarea)\b[^>]*\bid="([^"]+)"/g);
   assert.ok(controls.length > 0);
   for (const id of controls) assert.ok(labelled.has(id) || new RegExp(`<label[^>]*>\\s*<input[^>]*id="${id}"`).test(html), id);
+});
+
+// ---- Step 3 results map
+test('step 3 heading is "Your results" and the step bar says Results', () => {
+  assert.match(html, /<h2 [^>]*id="step-3-title"[^>]*>Your results<\/h2>/);
+  assert.match(html, /<li data-step="3"[^>]*>\s*<button[^>]*><span>3<\/span> Results<\/button>/);
+});
+
+test('List and Map are toggle buttons in a group labelled View', () => {
+  for (const [id, pressed] of [['view-list', 'true'], ['view-map-results', 'false']]) {
+    const tag = tagWithId(html, id);
+    assert.match(tag, /^<button type="button"/, id);
+    assert.match(tag, new RegExp(`aria-pressed="${pressed}"`), id);
+  }
+  assert.match(html, /<div class="toggle" role="group" aria-label="View">\s*<button type="button" id="view-list"/);
+});
+
+test('map status and in-view count each have exactly one live role', () => {
+  for (const id of ['map-status', 'in-view-count']) assert.equal(liveRoles(tagWithId(html, id)), 1, id);
+});
+
+test('results map takes focus, has a role for its label, and points to the keys hint', () => {
+  const tag = tagWithId(html, 'results-map');
+  assert.match(tag, /tabindex="0"/);
+  assert.match(tag, /aria-describedby="map-keys-hint"/);
+  assert.match(tag, /aria-label="Map of matching hams"/);
+  assert.match(tag, /role="region"/);
+  assert.match(html, /<p id="map-keys-hint" class="hint">Use the arrow keys to move the map and \+ or − to zoom\.<\/p>/);
+  assert.match(tagWithId(html, 'results-map-panel'), /\bhidden\b/);
+});
+
+test('in-view table has a caption and five column scopes', () => {
+  const table = html.match(/<table id="in-view-table"[\s\S]*?<\/table>/)?.[0] ?? '';
+  assert.match(table, /<caption[^>]*>Hams in this map view<\/caption>/);
+  assert.deepEqual(attrValues(table, /<th scope="col">([^<]+)<\/th>/g), ['Call', 'Name', 'Class', 'City', 'Look up']);
 });
 
 // tests/repo-hygiene.test.js checks that no club call sign appears in any file.
