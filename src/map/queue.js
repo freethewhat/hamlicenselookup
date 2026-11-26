@@ -20,82 +20,101 @@ export function createGeocodeQueue({
   let cooldownUntil = 0;
   let failures = 0;
   let worker = null;
+  const index = new Map(); // key -> entry, for everything waiting, in front, or in flight
 
   const inCooldown = () => now() < cooldownUntil;
-
-  const pendingCount = () => waiting.size + inflight.size + front.reduce((n, h) => n + h.length, 0);
 
   function want(items) {
     if (inCooldown()) return { error: NOT_ANSWERING };
     const t = now();
     const fresh = [];
+    const seen = new Set();
     for (const item of items) {
-      const entry = waiting.get(item.key) ?? inflight.get(item.key)
-        ?? front.flat().find((e) => e.item.key === item.key);
+      const entry = index.get(item.key);
       if (entry) entry.lastWanted = t;
-      else if (!fresh.some((f) => f.key === item.key)) fresh.push(item);
+      else if (!seen.has(item.key)) {
+        seen.add(item.key);
+        fresh.push(item);
+      }
     }
-    if (pendingCount() + fresh.length > maxTotal) return { error: BUSY };
-    for (const item of fresh) waiting.set(item.key, { item, lastWanted: t });
-    if (!worker && pendingCount() > 0) worker = run().finally(() => { worker = null; });
+    if (index.size + fresh.length > maxTotal) return { error: BUSY };
+    for (const item of fresh) {
+      const entry = { item, lastWanted: t };
+      waiting.set(item.key, entry);
+      index.set(item.key, entry);
+    }
+    if (!worker && index.size > 0) worker = run();
     return { error: null };
   }
 
   async function run() {
     await Promise.resolve(); // let the caller's synchronous want() calls land first
-    while (front.length > 0 || waiting.size > 0) {
-      const cutoff = now() - idleMs;
-      for (const [key, e] of waiting) if (e.lastWanted < cutoff) waiting.delete(key);
-      front = front.map((h) => h.filter((e) => e.lastWanted >= cutoff)).filter((h) => h.length);
-      if (front.length === 0 && waiting.size === 0) break;
-
-      let batch;
-      if (front.length > 0) {
-        batch = front.shift();
-      } else {
-        batch = [];
+    // `worker` is cleared by the finally block in the same synchronous step that
+    // leaves the loop, so a later want() always restarts the worker.
+    try {
+      while (front.length > 0 || waiting.size > 0) {
+        const cutoff = now() - idleMs;
         for (const [key, e] of waiting) {
-          if (batch.length >= batchSize) break;
-          batch.push(e);
-          waiting.delete(key);
+          if (e.lastWanted < cutoff) { waiting.delete(key); index.delete(key); }
         }
-      }
-      inflight = new Map(batch.map((e) => [e.item.key, e]));
-      try {
-        const answer = await geocode(batch.map((e) => ({ ...e.item, id: e.item.key })));
-        const rows = [];
-        for (const [id, r] of answer) {
-          if (inflight.has(id)) rows.push({ key: id, status: r.status, lat: r.lat, lon: r.lon });
+        for (const h of front) for (const e of h) if (e.lastWanted < cutoff) index.delete(e.item.key);
+        front = front.map((h) => h.filter((e) => e.lastWanted >= cutoff)).filter((h) => h.length);
+        if (front.length === 0 && waiting.size === 0) break;
+
+        let batch;
+        if (front.length > 0) {
+          batch = front.shift();
+        } else {
+          batch = [];
+          for (const [key, e] of waiting) {
+            if (batch.length >= batchSize) break;
+            batch.push(e);
+            waiting.delete(key);
+          }
         }
-        store.save(rows);
-        failures = 0;
-        inflight = new Map();
-      } catch {
-        // A geocode or store.save failure is one failed batch: halve and retry.
-        const mid = Math.ceil(batch.length / 2);
-        const halves = [batch.slice(0, mid), batch.slice(mid)].filter((h) => h.length);
-        front = [...halves, ...front];
-        inflight = new Map();
-        const wait = pauseMs * 2 ** failures;
-        failures++;
-        if (failures >= maxFailures) {
-          waiting.clear();
-          front = [];
+        inflight = new Map(batch.map((e) => [e.item.key, e]));
+        try {
+          const answer = await geocode(batch.map((e) => ({ ...e.item, id: e.item.key })));
+          const rows = [];
+          for (const [id, r] of answer) {
+            if (inflight.has(id)) rows.push({ key: id, status: r.status, lat: r.lat, lon: r.lon });
+          }
+          store.save(rows);
+          for (const key of inflight.keys()) index.delete(key);
           failures = 0;
-          cooldownUntil = now() + cooldownMs;
-          break;
+          inflight = new Map();
+        } catch {
+          // A geocode or store.save failure is one failed batch: halve and retry.
+          const mid = Math.ceil(batch.length / 2);
+          const halves = [batch.slice(0, mid), batch.slice(mid)].filter((h) => h.length);
+          front = [...halves, ...front];
+          inflight = new Map();
+          const wait = pauseMs * 2 ** failures;
+          failures++;
+          if (failures >= maxFailures) {
+            waiting.clear();
+            front = [];
+            index.clear();
+            failures = 0;
+            cooldownUntil = now() + cooldownMs;
+            break;
+          }
+          await sleep(wait);
+          continue;
         }
-        await sleep(wait);
-        continue;
+        if (front.length > 0 || waiting.size > 0) await sleep(pauseMs);
       }
-      if (front.length > 0 || waiting.size > 0) await sleep(pauseMs);
+    } finally {
+      worker = null;
     }
   }
 
   return {
     want,
-    isPending: (key) => waiting.has(key) || inflight.has(key) || front.some((h) => h.some((e) => e.item.key === key)),
+    isPending: (key) => index.has(key),
     error: () => (inCooldown() ? NOT_ANSWERING : null),
-    whenIdle: () => worker ?? Promise.resolve(),
+    whenIdle: async () => {
+      while (worker) await worker; // a want() during the last step may have started a new one
+    },
   };
 }

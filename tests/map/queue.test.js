@@ -124,3 +124,40 @@ test('keys missing from the answer are dropped unsaved', async () => {
   assert.deepEqual(saved.map((r) => r.key), ['a']);
   assert.equal(q.isPending('b'), false);
 });
+
+test('a want() landing as the worker finishes restarts it and whenIdle waits for it', async () => {
+  const calls = [];
+  const geocode = async (batch) => {
+    calls.push(batch.map((b) => b.id));
+    return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
+  };
+  let q;
+  let n = 0;
+  const store = { save() { if (n++ === 0) queueMicrotask(() => q.want(items('b'))); } };
+  ({ q } = setup({ geocode, store }));
+  q.want(items('a'));
+  await q.whenIdle();
+  assert.deepEqual(calls, [['a'], ['b']]);
+  assert.equal(q.isPending('b'), false);
+});
+
+test('want() of 20,000 new keys is fast even with a failed batch in front', async () => {
+  let n = 0;
+  const geocode = async (batch) => {
+    if (n++ === 0) throw new Error('boom');
+    return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
+  };
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { q } = setup({ geocode, sleep: () => gate });
+  q.want(items(...Array.from({ length: 1000 }, (_, i) => `f${i}`)));
+  await new Promise((r) => setImmediate(r)); // first batch fails, halves go to the front
+  const many = items(...Array.from({ length: 20_000 }, (_, i) => `k${i}`));
+  const t0 = performance.now();
+  assert.deepEqual(q.want(many), { error: null });
+  const ms = performance.now() - t0;
+  assert.ok(ms < 200, `want took ${ms} ms`);
+  assert.equal(q.isPending('k19999'), true);
+  release();
+  await q.whenIdle();
+});
