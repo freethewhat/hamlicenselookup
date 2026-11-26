@@ -2,7 +2,7 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
-## Change check: results map, 2026-11-26
+## Change check: results map, 2026-11-25
 
 Spec: `docs/superpowers/specs/2026-11-25-results-map-design.md`. Adds a List / Map toggle on step 3, a Leaflet map with count circles and pins, a progress line, and the "Hams in this map view" table.
 
@@ -42,8 +42,8 @@ axe "needs review", checked by hand:
 | Keyboard, list view | Heading (focused on arrival), List, Map, table scroll box, Back, Download CSV, footer links. Every stop shows the 3 px slate ring. |
 | Keyboard, map view | Enter on Map: `aria-pressed` turns true, focus stays on the button. Tab order: map region, each count circle ("325 hams. Zoom in."), Leaflet + and −, attribution links, in-view table scroll box, each "Look up <call>" link, Back, Download CSV. Arrow keys pan the map (80 px a press), + and − zoom. Enter and Space on a circle zoom in 2 levels with no page scroll, and focus goes to the map (fix 3). Shift+Tab from the map goes back to Map. Nothing traps focus. Enter on Download CSV downloads the file. Space on Back opens step 2 with focus on its heading. Returning to step 3 starts in List view. |
 | Pins | Not Tab stops, by design. Pins work only with a mouse or touch, like the step 1 map shapes. The keyboard and screen-reader path is the in-view table, which shows each ham's call, name, class, city, and "Look up" link (the popup shows the same). |
-| Target size | Count circles are 32 to 64 px. Pins draw about 18 px across. They pass WCAG 2.5.8 two ways: the spacing exception (after fix 1, no two map items are closer than 60 px, so a 24 px circle on each pin touches nothing else) and the equivalent-control exception (the in-view table links). "Look up" links are 24 px tall. The popup close button is 24 × 24 px. |
-| Live messages | `map-status` (progress line) and `in-view-count` are one `role="status"` each, and each is written only when its text changes (fix 6). The step 3 count stays its own `role="status"`. Map errors from the server show in the progress line, so they are announced once. |
+| Target size | Count circles are 32 to 64 px. Pins draw about 18 px across. Below zoom 16, after fix 1, no two map items are closer than 60 px, so a 24 px circle on each pin touches nothing else and pins pass WCAG 2.5.8 by the spacing exception. From zoom 16 up nothing is merged and every address is its own pin, so two pins can sit closer than that. There pins pass by the equivalent-control exception: every ham at every pin in view is in the in-view table with a 24 px "Look up" link. "Look up" links are 24 px tall. The popup close button is 24 × 24 px. |
+| Live messages | `map-status` (progress line) and `in-view-count` are one `role="status"` each, and each is written only when its text changes (fix 6). The step 3 count stays its own `role="status"`. Map errors from the server show in the progress line, so they are announced once. A 503 while a data update runs shows the list view's data-loading notice there too, not the error banner. |
 | 320 px (400% zoom) | List, map done, map preparing, map error, and no results: no sideways page scroll (after fix 2). Only the tables scroll inside their boxes. The pin popup fits inside the map (fix 4). |
 | Text spacing override at 320 px | List view and map view: no sideways scroll, and nothing is clipped in step 3. The pin popup wraps its text inside the map and stays clear of the zoom buttons. |
 
