@@ -4,7 +4,7 @@
 // Everything from the data goes in with textContent, never as HTML.
 import { prepareMap, mapPoints } from './api.js';
 import {
-  prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel,
+  prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth, POPUP_LEFT_ROOM,
 } from './map-format.js';
 
 const POLL_MS = 3000;
@@ -66,6 +66,8 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
   let timer = null;
   let shownPlaced = -1; // placed count of the last progress answer whose points were rendered
   let fitted = false;
+  let popupOpen = false; // a redraw removes the pin and closes its popup, so moves wait until it closes
+  let viewStale = false; // the map moved while a popup was open
 
   function ensureMap() {
     if (map) return;
@@ -76,7 +78,17 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
     }).addTo(map);
     marks = L.layerGroup().addTo(map);
     map.on('moveend', () => {
-      if (active && fitted) loadPoints();
+      if (!active || !fitted) return;
+      if (popupOpen) viewStale = true; // e.g. the popup panned the map to fit itself
+      else loadPoints();
+    });
+    map.on('popupopen', () => {
+      popupOpen = true;
+    });
+    map.on('popupclose', () => {
+      popupOpen = false;
+      if (viewStale && active && fitted) loadPoints();
+      viewStale = false;
     });
   }
 
@@ -101,6 +113,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       if (!isActivateKey(e.originalEvent)) return;
       e.originalEvent.preventDefault(); // Space would scroll the page
       zoomIn();
+      el.focus(); // the circle is redrawn after the zoom, so focus would fall to the page
     });
     marker.on('add', () => marker.getElement()?.setAttribute('aria-label', label));
     return marker;
@@ -114,7 +127,10 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       fillColor: cssVar('--pin-fill'),
       fillOpacity: 1,
     });
-    pin.bindPopup(() => popupFor(hams));
+    pin.bindPopup(() => popupFor(hams), {
+      maxWidth: popupMaxWidth(map.getSize().x),
+      autoPanPaddingTopLeft: [POPUP_LEFT_ROOM, 8],
+    });
     return pin;
   }
 
@@ -124,7 +140,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
     for (const p of pins) marks.addLayer(pinMarker(p));
     tableBody.replaceChildren(...inView.hams.map(tableRow));
     tableWrap.hidden = inView.hams.length === 0;
-    tableCountEl.textContent = inViewMessage(inView.count, inView.hams.length);
+    setLiveText(tableCountEl, inViewMessage(inView.count, inView.hams.length));
   }
 
   // Points for the current view. Before the first fit the whole world is asked for, so the map can fit to it.
@@ -160,7 +176,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
     try {
       const res = await prepareMap(body);
       if (mine !== token) return;
-      statusEl.textContent = prepareMessage(res);
+      setLiveText(statusEl, prepareMessage(res));
       if (needsPoints({ placed: res.placed, shownPlaced, fitted })) {
         await loadPoints(res.placed);
         if (mine !== token) return;

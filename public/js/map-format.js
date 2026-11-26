@@ -65,3 +65,17 @@ export const isActivateKey = (e) => e.key === 'Enter' || e.key === ' ' || e.key 
 
 // Accessible name of a cluster circle: the count and what pressing it does.
 export const clusterLabel = (count) => `${n(count)} hams. Zoom in.`;
+
+// Sets a live region's text only when it changes. Some screen readers repeat a message
+// whenever its text is rewritten, even with the same words, and the map rewrites on every poll and pan.
+export function setLiveText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+// Room a popup keeps from the map's left edge, so the zoom buttons (top left, above popups) never cover it.
+export const POPUP_LEFT_ROOM = 46;
+
+// Widest a pin popup's content may be on a map this wide. Leaflet's default 300 px is wider than the
+// map on a 320 px screen, and a popup wider than the map is cut off. 56 px covers the popup's
+// own padding (44 px) and a little room at the right edge; POPUP_LEFT_ROOM keeps clear of the zoom buttons.
+export const popupMaxWidth = (mapWidth) => Math.max(120, Math.min(300, mapWidth - 56 - POPUP_LEFT_ROOM));

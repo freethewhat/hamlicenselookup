@@ -57,3 +57,7 @@ test('fonts come from our own server', () => {
 });
 test('motion is turned off for reduce-motion users', () => assert.match(css, /@media \(prefers-reduced-motion: reduce\)/));
 test('focus ring uses the slate token', () => assert.match(css, /:focus-visible[^{]*\{[^}]*outline:[^;]*var\(--slate\)/));
+test('table scroll boxes clip their visually hidden text, so it cannot widen the page', () => {
+  // .visually-hidden is position: absolute; without a positioned .table-wrap it escapes the scroll box.
+  assert.match(css, /\.table-wrap\s*\{[^}]*position:\s*relative/);
+});

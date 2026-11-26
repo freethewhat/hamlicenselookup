@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel,
+  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth,
 } from '../../public/js/map-format.js';
 
 test('prepareMessage while pending counts placed hams', () => {
@@ -120,4 +120,22 @@ test('isActivateKey is Enter or Space, like a button', () => {
 test('clusterLabel names the count and the action', () => {
   assert.equal(clusterLabel(254), '254 hams. Zoom in.');
   assert.equal(clusterLabel(1500), '1,500 hams. Zoom in.');
+});
+
+test('setLiveText writes only when the text changes, so a live region does not repeat itself', () => {
+  let writes = 0;
+  let value = '';
+  const el = { get textContent() { return value; }, set textContent(v) { writes++; value = v; } };
+  setLiveText(el, 'Preparing map: 1 of 9 hams placed.');
+  setLiveText(el, 'Preparing map: 1 of 9 hams placed.');
+  assert.equal(writes, 1);
+  setLiveText(el, 'Preparing map: 2 of 9 hams placed.');
+  assert.equal(writes, 2);
+  assert.equal(value, 'Preparing map: 2 of 9 hams placed.');
+});
+
+test('popupMaxWidth keeps a pin popup inside a narrow map', () => {
+  assert.equal(popupMaxWidth(800), 300); // Leaflet's default cap on a wide map
+  assert.equal(popupMaxWidth(250), 148); // 320 px screen: map width less padding, edge room, and the zoom buttons
+  assert.equal(popupMaxWidth(100), 120); // never squeezed below a readable width
 });
