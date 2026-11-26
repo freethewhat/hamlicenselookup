@@ -168,3 +168,83 @@ test('the keyed-rows cache is per connection and expires', () => {
   assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 3);
   t.done();
 });
+
+// A write from another connection, the way the daily update writes into the live licenses.db.
+function writeFromOtherConnection(t, sql, ...args) {
+  const other = new Database(t.db.name);
+  other.prepare(sql).run(...args);
+  other.close();
+}
+function insertFromOtherConnection(t, r) {
+  const row = { status: 'A', applicant_type: 'I', trustee_call: '', last_key: 'TESTER', ...r };
+  const cols = Object.keys(row);
+  const other = new Database(t.db.name);
+  other.prepare(`INSERT INTO licenses (${cols.join(',')}) VALUES (${cols.map((c) => `@${c}`).join(',')})`).run(row);
+  other.close();
+}
+
+test('a daily update that adds an opted-out call hides its address at once and never queues it', () => {
+  const t = setup({ optOut: ['K7NEW'] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 4);
+  const pine = ham(7, 'K7NEW', { street: '7 Pine St' });
+  insertFromOtherConnection(t, pine);
+  const pineKey = mapAddress(pine).key;
+  t.wanted.length = 0;
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.equal(out.total, 5);
+  assert.equal(out.unplaceable, 2);
+  assert.ok(t.wanted.flat().every((i) => i.key !== pineKey));
+  t.store.save([{ key: pineKey, status: 'match', lat: 46.86, lon: -114.0 }]);
+  assert.equal(service.points(t.db, ZIPS, FILTERS, BOX, 16).inView.hams.some((h) => h.call === 'K7NEW'), false);
+  t.done();
+});
+
+test('an opted-out ham who moves in a daily update hides the new address', () => {
+  const t = setup({ optOut: ['K7DDD'], saved: [] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  service.prepare(t.db, ZIPS, FILTERS);
+  writeFromOtherConnection(t, "UPDATE licenses SET street = '12 Main St' WHERE call = 'K7DDD'");
+  t.wanted.length = 0;
+  service.prepare(t.db, ZIPS, FILTERS);
+  assert.ok(t.wanted.flat().every((i) => i.key !== MAIN));
+  t.done();
+});
+
+test('the keyed-rows cache never serves rows from before another connection wrote', () => {
+  const t = setup();
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 4);
+  writeFromOtherConnection(t, 'DELETE FROM licenses WHERE call = ?', 'K7DDD');
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 3);
+  t.done();
+});
+
+test('the keyed-rows cache holds at most 6 searches per connection, least recently used out first', () => {
+  const t = setup();
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const search = (i) => ({ ...FILTERS, firstLicenseSince: `2000-01-0${i}` });
+  for (let i = 1; i <= 6; i++) assert.equal(service.prepare(t.db, ZIPS, search(i)).total, 4);
+  t.db.prepare('DELETE FROM licenses WHERE call = ?').run('K7DDD'); // same connection: caches stay
+  assert.equal(service.prepare(t.db, ZIPS, search(1)).total, 4); // cached, now most recent
+  assert.equal(service.prepare(t.db, ZIPS, search(7)).total, 3); // evicts search 2
+  assert.equal(service.prepare(t.db, ZIPS, search(2)).total, 3); // read again; evicts search 3
+  assert.equal(service.prepare(t.db, ZIPS, search(1)).total, 4); // still cached
+  t.done();
+});
+
+test('a search with too many hams is refused by prepare and points, with nothing queued', () => {
+  const msg = 'This area has too many hams to map at once. Pick a smaller area.';
+  const t = setup({ saved: [] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut, maxHams: 3 });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.equal(out.error, msg);
+  assert.equal(out.pending, 0);
+  assert.equal(out.placed, 0);
+  assert.deepEqual(t.wanted, []);
+  const pts = service.points(t.db, ZIPS, FILTERS, BOX, 16);
+  assert.deepEqual(pts, { clusters: [], pins: [], inView: { count: 0, hams: [] }, error: msg });
+  const ok = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut, maxHams: 4 });
+  assert.equal(ok.prepare(t.db, ZIPS, FILTERS).error, null);
+  t.done();
+});

@@ -91,7 +91,7 @@ To be left off the map, email <contact>.
 
 This is how only new or changed addresses get sent: when a ham moves, their new address has no saved point, so it gets geocoded. A weekly rebuild of `licenses.db` changes nothing, because points live in another file. If the cleanup rules change later, some saved points stop matching. They are just geocoded again on demand. That is acceptable.
 
-The key exists only in JS, so the server reads every matching row for the search and keys it in JS. A search is limited to its ZIPs, so this is small (Los Angeles County: about 17,000 rows). The server caches the keyed rows per search body for a short time (about a minute), so panning and zooming do not redo it.
+The key exists only in JS, so the server reads every matching row for the search and keys it in JS. A search is limited to its ZIPs, so this is small (Los Angeles County: about 17,000 rows). The server caches the keyed rows per search body for a short time (about a minute), so panning and zooming do not redo it. The cache keeps at most 6 searches per database connection (least recently used out first) and is dropped when the data changes, including a daily update written into the live file.
 
 **Who gets a pin.** Hams with a street after cleanup. A PO-box-only ham never gets a pin and counts as "could not be placed." Hams on the removal list never get a pin either.
 
@@ -130,6 +130,7 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- schema_version
 - An address already queued is not queued twice, even if two visitors ask for it.
 - Requests send a plain `User-Agent` with the app name only, like the FCC downloads.
 - **Per-request cap (builder-check call):** if a search has more than 20,000 addresses with no point yet, nothing is queued. The answer has `pending: 0` and `error: "This area has too many new addresses to map at once. Pick a smaller area."` Points already saved still show. All or nothing, so reopening the map cannot creep through a whole state.
+- **Ham cap:** a search with more than 100,000 matching hams is not mapped at all. Both map routes count first, read no rows, queue nothing, and return `error: "This area has too many hams to map at once. Pick a smaller area."` (`prepare` counts are 0; `points` has no circles, pins, or table rows.) This keeps one huge search from filling the server's memory.
 - **Global cap (builder-check call):** the queue holds at most 40,000 addresses in total. A request that would go over gets `error: "The map is busy. Try again in a few minutes."` and nothing is queued.
 - **Work nobody is waiting for is dropped (builder-check call).** Each queued address remembers the last time a request that needs it called `prepare`. Addresses no request has polled for 60 seconds are dropped before their batch is sent. So closing the page or switching back to List stops the work soon.
 - `pending` counts only this request's addresses that are still waiting, not other visitors' work.
@@ -157,6 +158,7 @@ Both routes sit behind the existing `/api` rate limit and 503 rule, and take the
 
 - **Clustering is done on the server** in plain JS. No new library. Points in the box are grouped into a grid of cells about 60 screen pixels wide at the given zoom. A cell with one address is a pin. A cell with more is a circle at the average position.
 - From zoom 16 up, every address is a pin.
+- If the search is over the ham cap, the answer is empty with the same `error` as `prepare`.
 - Hard limit: at most 2,000 items per answer. Grid clustering keeps it far below that.
 - A pin carries only what the popup shows. No street, no ZIP, no lat/lon beyond the pin's own spot.
 - The answer also has `inView: { count, hams: [...] }`: every ham at an address inside the box, sorted by call sign, at most 100. It feeds the "Hams in this map view" table.
@@ -174,7 +176,7 @@ Both routes sit behind the existing `/api` rate limit and 503 rule, and take the
 - The browser still loads nothing new from other servers. The CSP does not change.
 - `licenses.db` and `geo.db` do not change. No schema bump, no downtime.
 - `geocode.db` grows by about 60 bytes per address. A full US worth would be under 100 MB.
-- Memory: the queue holds at most 40,000 short addresses (a few MB). The keyed-rows cache holds a few searches for about a minute each.
+- Memory: the queue holds at most 40,000 short addresses (a few MB). The keyed-rows cache holds at most 6 searches per connection for about a minute each, and no search over 100,000 hams is read.
 
 ## Rules this must keep
 
