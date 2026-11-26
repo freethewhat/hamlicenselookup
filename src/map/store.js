@@ -19,9 +19,18 @@ function storedVersion(path) {
 
 export function openPointStore(path, { now = () => new Date() } = {}) {
   if (existsSync(path)) {
-    const version = storedVersion(path);
+    let version;
+    try {
+      version = storedVersion(path);
+    } catch {
+      version = 'unreadable';
+    }
     if (version !== null && version !== String(GEOCODE_SCHEMA_VERSION)) {
-      renameSync(path, `${path}.old-${now().toISOString().replace(/[:.]/g, '-')}`);
+      const aside = `${path}.old-${now().toISOString().replace(/[:.]/g, '-')}`;
+      renameSync(path, aside);
+      for (const ext of ['-wal', '-shm']) {
+        if (existsSync(path + ext)) renameSync(path + ext, aside + ext);
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -77,5 +77,35 @@ test('mismatched schema version moves the file aside', () => {
   const check = new Database(t.path, { readonly: true });
   assert.equal(check.prepare("SELECT value FROM meta WHERE key='schema_version'").get().value, String(GEOCODE_SCHEMA_VERSION));
   check.close();
+  t.done();
+});
+
+test('WAL and SHM files move aside with the old database', () => {
+  const t = tmp();
+  const db = new Database(t.path);
+  db.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
+  db.prepare("INSERT INTO meta VALUES ('schema_version', '0')").run();
+  db.close();
+  writeFileSync(`${t.path}-wal`, 'stale wal');
+  writeFileSync(`${t.path}-shm`, 'stale shm');
+  const store = openPointStore(t.path);
+  store.save(rows);
+  assert.equal(store.lookup(['a']).size, 1);
+  store.close();
+  const old = readdirSync(t.dir).filter((f) => f.startsWith('geocode.db.old-'));
+  assert.ok(old.some((f) => f.endsWith('-wal')));
+  assert.ok(old.some((f) => f.endsWith('-shm')));
+  t.done();
+});
+
+test('a corrupt file is moved aside and the store starts empty', () => {
+  const t = tmp();
+  writeFileSync(t.path, Buffer.alloc(4096, 0x41));
+  const store = openPointStore(t.path);
+  assert.equal(store.lookup(['a']).size, 0);
+  store.save(rows);
+  assert.equal(store.lookup(['a']).size, 1);
+  store.close();
+  assert.ok(readdirSync(t.dir).some((f) => f.startsWith('geocode.db.old-')));
   t.done();
 });
