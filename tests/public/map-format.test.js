@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize,
+  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel,
 } from '../../public/js/map-format.js';
 
 test('prepareMessage while pending counts placed hams', () => {
@@ -94,4 +94,30 @@ test('clusterSize is at least 32 px and grows with the count', () => {
   assert.ok(clusterSize(100) > clusterSize(10));
   assert.ok(clusterSize(10000) > clusterSize(100));
   assert.ok(clusterSize(1e6) <= 64);
+});
+
+test('needsPoints loads when more hams are placed than the map last showed', () => {
+  assert.equal(needsPoints({ placed: 10, shownPlaced: -1, fitted: false }), true); // first answer
+  assert.equal(needsPoints({ placed: 10, shownPlaced: 10, fitted: true }), false); // nothing new
+  assert.equal(needsPoints({ placed: 20, shownPlaced: 10, fitted: true }), true); // a batch finished
+  assert.equal(needsPoints({ placed: 0, shownPlaced: -1, fitted: false }), true); // shows the empty answer once
+});
+
+test('needsPoints retries while the map has not been fitted', () => {
+  // An answer dropped or failed before the first fit must not leave the map empty for good.
+  assert.equal(needsPoints({ placed: 10, shownPlaced: 10, fitted: false }), true);
+  assert.equal(needsPoints({ placed: 0, shownPlaced: 0, fitted: false }), false); // nothing to fit to
+});
+
+test('isActivateKey is Enter or Space, like a button', () => {
+  assert.equal(isActivateKey({ key: 'Enter' }), true);
+  assert.equal(isActivateKey({ key: ' ' }), true);
+  assert.equal(isActivateKey({ key: 'Spacebar' }), true);
+  assert.equal(isActivateKey({ key: 'a' }), false);
+  assert.equal(isActivateKey({ key: '+' }), false);
+});
+
+test('clusterLabel names the count and the action', () => {
+  assert.equal(clusterLabel(254), '254 hams. Zoom in.');
+  assert.equal(clusterLabel(1500), '1,500 hams. Zoom in.');
 });

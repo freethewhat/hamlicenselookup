@@ -50,3 +50,18 @@ export function viewFromBounds({ south, west, north, east }, zoom) {
   if (!(south < north && west < east)) return null;
   return { bbox: { south, west, north, east }, zoom: Math.min(19, Math.max(0, Math.round(zoom))) };
 }
+
+// Whether to ask for points after a progress answer. shownPlaced is the placed count the map last
+// rendered (-1 before any). Until the map has been fitted it keeps asking, so an answer that was
+// dropped (view switched) or failed never leaves the map empty for good.
+export function needsPoints({ placed, shownPlaced, fitted }) {
+  if (shownPlaced < 0) return true;
+  if (!fitted) return placed > 0;
+  return placed > shownPlaced;
+}
+
+// Keys that press a button: Enter or Space.
+export const isActivateKey = (e) => e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar';
+
+// Accessible name of a cluster circle: the count and what pressing it does.
+export const clusterLabel = (count) => `${n(count)} hams. Zoom in.`;

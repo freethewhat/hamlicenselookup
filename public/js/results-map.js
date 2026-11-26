@@ -3,7 +3,9 @@
 // "Hams in this map view" table. Uses the global `L` from /vendor/leaflet/leaflet.js.
 // Everything from the data goes in with textContent, never as HTML.
 import { prepareMap, mapPoints } from './api.js';
-import { prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize } from './map-format.js';
+import {
+  prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel,
+} from './map-format.js';
 
 const POLL_MS = 3000;
 const MAX_ZOOM = 18;
@@ -62,7 +64,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
   let token = 0; // a new show() or hide() drops answers for the old search
   let pointsToken = 0; // a newer map view drops answers for an older one
   let timer = null;
-  let lastPlaced = -1;
+  let shownPlaced = -1; // placed count of the last progress answer whose points were rendered
   let fitted = false;
 
   function ensureMap() {
@@ -85,14 +87,22 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
     div.style.width = `${size}px`;
     div.style.height = `${size}px`;
     div.textContent = count.toLocaleString('en-US');
-    const label = `${count.toLocaleString('en-US')} hams. Zoom in.`;
+    const label = clusterLabel(count);
     const marker = L.marker([lat, lon], {
       icon: L.divIcon({ html: div, className: '', iconSize: [size, size] }),
       title: label,
       alt: label,
-      keyboard: true,
+      keyboard: true, // Leaflet makes the icon a role=button Tab stop
     });
-    marker.on('click', (e) => map.setView(e.latlng, Math.min(map.getZoom() + 2, MAX_ZOOM)));
+    const zoomIn = () => map.setView(marker.getLatLng(), Math.min(map.getZoom() + 2, MAX_ZOOM));
+    marker.on('click', zoomIn);
+    // Leaflet does not click a marker from the keyboard, so Enter and Space are handled here.
+    marker.on('keypress', (e) => {
+      if (!isActivateKey(e.originalEvent)) return;
+      e.originalEvent.preventDefault(); // Space would scroll the page
+      zoomIn();
+    });
+    marker.on('add', () => marker.getElement()?.setAttribute('aria-label', label));
     return marker;
   }
 
@@ -118,7 +128,8 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
   }
 
   // Points for the current view. Before the first fit the whole world is asked for, so the map can fit to it.
-  async function loadPoints() {
+  // placed: the progress count that asked for this load; recorded only once the answer is rendered.
+  async function loadPoints(placed) {
     const mine = token;
     const pmine = ++pointsToken;
     const b = map.getBounds();
@@ -130,6 +141,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       const res = await mapPoints({ ...body, ...view });
       if (mine !== token || pmine !== pointsToken) return;
       render(res);
+      if (placed !== undefined) shownPlaced = placed;
       if (!fitted) {
         const all = [...res.clusters, ...res.pins].map((p) => [p.lat, p.lon]);
         if (all.length) {
@@ -149,9 +161,8 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       const res = await prepareMap(body);
       if (mine !== token) return;
       statusEl.textContent = prepareMessage(res);
-      if (res.placed > lastPlaced) {
-        lastPlaced = res.placed;
-        await loadPoints();
+      if (needsPoints({ placed: res.placed, shownPlaced, fitted })) {
+        await loadPoints(res.placed);
         if (mine !== token) return;
       }
       if (res.pending > 0) timer = setTimeout(poll, POLL_MS);
@@ -176,7 +187,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       active = true;
       if (next !== body) {
         body = next;
-        lastPlaced = -1;
+        shownPlaced = -1;
         fitted = false;
         marks.clearLayers();
         tableBody.replaceChildren();

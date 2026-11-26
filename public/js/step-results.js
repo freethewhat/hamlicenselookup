@@ -112,5 +112,6 @@ export function initResults({ selection, getFilters, getMailer = () => false, on
     }
   }
 
-  return { show };
+  // Leaving step 3 stops the map's polling.
+  return { show, leave: () => resultsMap?.hide() };
 }

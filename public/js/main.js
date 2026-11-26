@@ -38,6 +38,7 @@ function enterStep(n) {
   current = n;
   goToStep(n);
   if (n === 3) results.show();
+  else results?.leave();
 }
 
 // Browser Back or Forward. If the areas were cleared, steps 2 and 3 are closed: go to step 1.
