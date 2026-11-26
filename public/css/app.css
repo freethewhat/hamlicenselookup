@@ -23,6 +23,11 @@
   --tint-info: #e6edf3;
   --tint-ok: #e3f1e4;
   --line-strong: #8a7f6e;
+  --map-tile: #f2efe9;      /* OpenStreetMap land color, the usual background of results-map marks */
+  --cluster-fill: #2b3a4a;  /* results-map circle */
+  --cluster-ink: #ffffff;   /* count text in a circle */
+  --pin-fill: #ca2017;      /* results-map pin */
+  --pin-line: #2b3a4a;      /* pin outline */
 
   --font-body: 'Lato', Helvetica, Arial, sans-serif;
   --font-title: 'Playfair Display', Georgia, serif;
@@ -183,6 +188,23 @@ button.link:hover:not(:disabled) { background: none; color: var(--red); }
 .leaflet-container { font-family: var(--font-body); }
 .leaflet-bar a { color: var(--slate); }
 
+/* ---- Results map (step 3). Circles show a count as text; pins are smaller dots with an outline. */
+#results-map { block-size: 55vh; min-block-size: 280px; border: 1px solid var(--line); border-radius: 12px; background: #ece6da; }
+.map-status { font-weight: 700; margin: .6rem 0 .25rem; }
+.cluster-icon {
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--cluster-fill); color: var(--cluster-ink);
+  border: 2px solid var(--cluster-ink);
+  box-shadow: 0 0 0 1px var(--cluster-fill);
+  font: 700 .85rem/1 var(--font-body);
+  cursor: pointer;
+}
+.ham-popup { margin: 0; padding: 0; list-style: none; font-size: .9rem; overflow-wrap: anywhere; }
+.ham-popup li + li { margin-block-start: .5rem; padding-block-start: .5rem; border-block-start: 1px solid var(--line); }
+.ham-popup a, #in-view-table a { display: inline-block; min-block-size: 24px; line-height: 24px; color: var(--slate); font-weight: 700; text-decoration: underline; }
+#results-map-panel .table-wrap { margin-block-start: .5rem; }
+
 /* ---- Combobox list */
 .combo { position: relative; max-inline-size: 28rem; }
 .combo [role="listbox"] {
@@ -229,7 +251,7 @@ button.link:hover:not(:disabled) { background: none; color: var(--red); }
 
 /* ---- Results */
 .result-count { font-size: 1.15rem; font-weight: 900; color: var(--ink); margin: 0 0 .75rem; }
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
 table { border-collapse: collapse; inline-size: 100%; font-size: .9rem; }
 caption { text-align: start; padding: .6rem .75rem; font-weight: 700; color: var(--slate); }
 th, td { text-align: start; padding: .5rem .75rem; border-block-end: 1px solid var(--line); white-space: nowrap; }
@@ -250,7 +272,7 @@ tbody tr:nth-child(even) { background: #fcfbf8; }
 /* ---- Small screens */
 @media (max-width: 480px) {
   main { padding-inline: .75rem; }
-  #map { block-size: 50vh; }
+  #map, #results-map { block-size: 50vh; }
   select, input[type="text"] { max-inline-size: none; }
   .nav.split { flex-wrap: nowrap; }
 }

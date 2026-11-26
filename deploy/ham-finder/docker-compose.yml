@@ -5,6 +5,8 @@ services:
     environment:
       # Set AUTO_UPDATE=0 in /srv/apps/ham-finder/.env to skip the start-up update.
       AUTO_UPDATE: ${AUTO_UPDATE:-1}
+      # Contact for hams who want to be left off the results map; set MAP_CONTACT in the same .env.
+      MAP_CONTACT: ${MAP_CONTACT:-}
     volumes:
       - ./data:/data
     networks:

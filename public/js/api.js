@@ -40,3 +40,6 @@ export const lookupLicenses = (params) => {
 };
 export const search = async (body) => (await post('/api/search', body)).json();
 export const exportCsv = async (body) => (await post('/api/export', body)).blob();
+export const prepareMap = async (body) => (await post('/api/map/prepare', body)).json();
+// body: search body plus bbox { south, west, north, east } and an integer zoom 0-19.
+export const mapPoints = async (body) => (await post('/api/map/points', body)).json();

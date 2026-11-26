@@ -2,6 +2,58 @@
 
 The web page must meet **WCAG 2.2 level AA**. See [public/CLAUDE.md](../public/CLAUDE.md) for the rules every change must follow.
 
+## Change check: results map, 2026-11-25
+
+Spec: `docs/superpowers/specs/2026-11-25-results-map-design.md`. Adds a List / Map toggle on step 3, a Leaflet map with count circles and pins, a progress line, and the "Hams in this map view" table.
+
+**Result: no known WCAG 2.2 AA failures** after the fixes below.
+
+Tools: axe-core 4.14.1 (rule tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, best-practice`) in the Playwright MCP browser (Chromium), loaded by the method in "How to repeat the audit". Full US data (`./data`), with Missoula County, MT already placed on the map. The page's Content Security Policy stayed on. The map error state came from a throwaway local server (not in the repo) that ran `createApp` with a Census fetch that always fails and `mapQueueOptions` `{ maxFailures: 1, pauseMs: 0 }`.
+
+| axe state | 1280 px | 320 px |
+|---|---|---|
+| Step 3, list view (Missoula County, MT, "First license only" off, 397 hams) | 0 | 0 |
+| Map view, preparing ("Preparing map: 0 of 571 hams placed." / 568 at 320 px; Gallatin and Flathead counties, MT) | 0 | 0 |
+| Map view, done (Missoula County: "326 of 397 hams are on the map. 71 could not be placed …") | 0 | 0 |
+| Map view, done, pin popup open | 0 | 0 |
+| Map view, error ("The map service is not answering. Try again later.") | 0 | 0 |
+| No results (Petroleum County, MT, "First license only" on) | 0 | 0 |
+
+These are the final scans, after the fixes. The first scan of "map view, done" found 1 `target-size` violation (fix 1).
+
+axe "needs review", checked by hand:
+
+- `color-contrast` on the list and in-view table cells inside the scroll box ("partially obscured"), the same item as earlier audits. Text uses token pairs in `tests/public/theme.test.js`.
+- `color-contrast` on the count circle: `--cluster-ink` on `--cluster-fill`, a pair in the theme test.
+- `color-contrast` on the map hint, progress line, in-view count, opt-out line, Back, and Download CSV while preparing and in the error state ("overlapped by another element", no element named). `elementsFromPoint` at each of them finds only the element itself and its parents. These were below the fold at 900 px tall, and the flag went away once the map finished. All use theme-test token pairs.
+- `color-contrast` on the Leaflet attribution and zoom buttons over tiles, and `label-content-name-mismatch` on the Leaflet zoom buttons (+ / −, named "Zoom in" / "Zoom out") and the popup close button (×, "Close popup"): symbols, not text labels. Same items as the 2026-11-13 audit.
+
+### Problems the check found and fixed
+
+1. **Count circles on top of each other.** At the fitted zoom, the grid clustering split Missoula into 4 circles within 11 px of each other. They covered each other (axe `target-size`, 5 px of free space) and their counts could not be read. Groups closer than one grid cell (60 px) now merge into one circle (`src/map/cluster.js`). Tests: two new cases in `tests/map/cluster.test.js`, one of which checks that no two items in a 3,000-point set are closer than 60 px.
+2. **Sideways page scroll at 320 px in map view (311 px).** The hidden call sign in each "Look up" link is `position: absolute`. It escaped the table's scroll box because the box was not positioned. `.table-wrap` now has `position: relative`. Test in `tests/public/theme.test.js`.
+3. **Focus lost after a cluster zoom.** Enter or Space on a circle zoomed in, then the circle was redrawn and focus fell to `<body>`. Focus now moves to the map region, which shows its ring, and the next Tab goes to the new circles.
+4. **Pin popup cut off at 320 px.** Leaflet's default popup width (300 px) was wider than the 249 px map, so the text was clipped at the map edge. Once that was fixed, the popup could slide under the zoom buttons. The popup width now follows the map width (`popupMaxWidth` in `public/js/map-format.js`, tested in `tests/public/map-format.test.js`), it keeps 46 px from the left edge for the zoom buttons, and long words wrap.
+5. **Pin popup closed itself.** When a popup near the map edge panned the map to fit, the pan reloaded the points, and the redraw removed the pin and its popup. While a popup is open, map moves now wait. The view reloads when the popup closes.
+6. **Progress line repeated.** The progress line and the in-view count were rewritten on every poll (3 s) and every pan, even with the same words. Some screen readers read a live region again whenever its text is rewritten. They are now written only when the text changes (`setLiveText`, tested in `tests/public/map-format.test.js`).
+
+| Check | Result |
+|---|---|
+| Keyboard, list view | Heading (focused on arrival), List, Map, table scroll box, Back, Download CSV, footer links. Every stop shows the 3 px slate ring. |
+| Keyboard, map view | Enter on Map: `aria-pressed` turns true, focus stays on the button. Tab order: map region, each count circle ("325 hams. Zoom in."), Leaflet + and −, attribution links, in-view table scroll box, each "Look up <call>" link, Back, Download CSV. Arrow keys pan the map (80 px a press), + and − zoom. Enter and Space on a circle zoom in 2 levels with no page scroll, and focus goes to the map (fix 3). Shift+Tab from the map goes back to Map. Nothing traps focus. Enter on Download CSV downloads the file. Space on Back opens step 2 with focus on its heading. Returning to step 3 starts in List view. |
+| Pins | Not Tab stops, by design. Pins work only with a mouse or touch, like the step 1 map shapes. The keyboard and screen-reader path is the in-view table, which shows each ham's call, name, class, city, and "Look up" link (the popup shows the same). |
+| Target size | Count circles are 32 to 64 px. Pins draw about 18 px across. Below zoom 16, after fix 1, no two map items are closer than 60 px, so a 24 px circle on each pin touches nothing else and pins pass WCAG 2.5.8 by the spacing exception. From zoom 16 up nothing is merged and every address is its own pin, so two pins can sit closer than that. There pins pass by the equivalent-control exception: every ham at every pin in view is in the in-view table with a 24 px "Look up" link. "Look up" links are 24 px tall. The popup close button is 24 × 24 px. |
+| Live messages | `map-status` (progress line) and `in-view-count` are one `role="status"` each, and each is written only when its text changes (fix 6). The step 3 count stays its own `role="status"`. Map errors from the server show in the progress line, so they are announced once. A 503 while a data update runs shows the list view's data-loading notice there too, not the error banner. |
+| 320 px (400% zoom) | List, map done, map preparing, map error, and no results: no sideways page scroll (after fix 2). Only the tables scroll inside their boxes. The pin popup fits inside the map (fix 4). |
+| Text spacing override at 320 px | List view and map view: no sideways scroll, and nothing is clipped in step 3. The pin popup wraps its text inside the map and stays clear of the zoom buttons. |
+
+Known, not fixed here:
+
+- The Download CSV button disables itself while the export runs, so focus falls to `<body>` for that moment (Shift+Tab still lands on Back in Chromium). This was already the case before the map, in List view too.
+- While a popup is open, panning does not refresh the in-view table until the popup closes (the trade-off in fix 5).
+
+Not checked: real screen reader (none installed), Firefox, Safari, touch devices. Reduce motion was not toggled; the change adds no CSS animation, and Leaflet's own zoom animation is unchanged from step 1.
+
 ## Change check: lookup page and title link, 2026-11-19
 
 Spec: `docs/superpowers/specs/2026-11-18-ham-lookup-design.md`. Adds `public/lookup.html`, a two-link site nav in the header of both pages, and makes the "Ham License Finder" title a link to the home page.

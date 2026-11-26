@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -10,6 +11,11 @@ import { lookup } from '../search/lookup.js';
 import { nameKey } from '../db/name-key.js';
 import { MAILER_COLUMNS, countAddresses, groupByAddress } from '../search/mailer.js';
 import { readStatus } from '../update/status.js';
+import { openPointStore } from '../map/store.js';
+import { createOptOut } from '../map/optout.js';
+import { geocodeBatch } from '../map/census.js';
+import { createGeocodeQueue } from '../map/queue.js';
+import { createMapService } from '../map/service.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MAX_ZIPS = 5000;
@@ -110,9 +116,24 @@ function parseLookup(geoDb, query) {
   }
 }
 
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// Checks the map view in a /api/map/points body; returns { bbox, zoom }.
+function parseMapView(body) {
+  const { bbox, zoom } = body ?? {};
+  const { south, west, north, east } = bbox !== null && typeof bbox === 'object' ? bbox : {};
+  const ok = [south, west, north, east].every(isNum)
+    && south >= -90 && south < north && north <= 90
+    && west >= -180 && west < east && east <= 180
+    && Number.isInteger(zoom) && zoom >= 0 && zoom <= 19;
+  if (!ok) throw bad('Invalid map view');
+  return { bbox: { south, west, north, east }, zoom };
+}
+
 export function createApp({
   dataDir, now = () => new Date(), recheckMs, rateLimitPerMinute = 120,
   exportDrainTimeoutMs = 60_000, exportTimeoutMs = 5 * 60_000,
+  fetchImpl = fetch, mapContact = '', mapQueueOptions = {},
 }) {
   const handle = openHandle({
     licenseDbPath: join(dataDir, 'licenses.db'),
@@ -121,6 +142,22 @@ export function createApp({
   });
   const app = express();
   app.locals.handle = handle;
+
+  // Map points live in their own file; the update job never touches it.
+  mkdirSync(dataDir, { recursive: true });
+  const mapStore = openPointStore(join(dataDir, 'geocode.db'));
+  const mapQueue = createGeocodeQueue({
+    geocode: (items) => geocodeBatch(fetchImpl, items),
+    store: mapStore,
+    ...mapQueueOptions,
+  });
+  const mapService = createMapService({
+    store: mapStore,
+    queue: mapQueue,
+    optOut: createOptOut(join(dataDir, 'map-optout.txt')),
+  });
+  app.locals.mapStore = mapStore;
+  app.locals.mapQueue = mapQueue;
   app.set('trust proxy', 1);
   app.use((req, res, next) => {
     res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Content-Security-Policy': CSP });
@@ -158,7 +195,7 @@ export function createApp({
     const meta = Object.fromEntries(req.db.prepare('SELECT key, value FROM meta').all().map((r) => [r.key, r.value]));
     const asOf = Date.parse(meta.data_as_of ?? '');
     const stale = Number.isNaN(asOf) || now().getTime() - asOf > STALE_DAYS * DAY_MS;
-    res.json({ dataAsOf: meta.data_as_of ?? null, licenseCount: Number(meta.license_count ?? 0), stale });
+    res.json({ dataAsOf: meta.data_as_of ?? null, licenseCount: Number(meta.license_count ?? 0), stale, mapContact });
   });
 
   app.get('/api/states', (req, res) => {
@@ -221,6 +258,17 @@ export function createApp({
       drainTimeoutMs: exportDrainTimeoutMs,
       deadlineMs: exportTimeoutMs,
     });
+  });
+
+  app.post('/api/map/prepare', (req, res) => {
+    const { zips, filters } = parseSearch(req.db, req.body);
+    res.json(mapService.prepare(req.db, zips, filters));
+  });
+
+  app.post('/api/map/points', (req, res) => {
+    const { zips, filters } = parseSearch(req.db, req.body);
+    const { bbox, zoom } = parseMapView(req.body);
+    res.json(mapService.points(req.db, zips, filters, bbox, zoom));
   });
 
   // public/CLAUDE.md is notes for Claude Code, not part of the site.

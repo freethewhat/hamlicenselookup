@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-11-14-prepare-for-mailer-design.md
 import { csvZip } from './csv.js';
 
-const squash = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+export const squash = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---- Text cleanup (output only; the database keeps the FCC text as is)

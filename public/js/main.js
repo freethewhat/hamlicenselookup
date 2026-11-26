@@ -1,6 +1,7 @@
 // Page shell: header step bar, banners, footer, and step switching. Steps 2 and 3 mount into #step-2 / #step-3.
 import { getMeta } from './api.js';
 import { dataLoadingNotice } from './status-format.js';
+import { optOutText } from './map-format.js';
 import { createSelection } from './selection.js';
 import { initAreas } from './step-areas.js';
 import { initFilters } from './step-filters.js';
@@ -37,6 +38,7 @@ function enterStep(n) {
   current = n;
   goToStep(n);
   if (n === 3) results.show();
+  else results?.leave();
 }
 
 // Browser Back or Forward. If the areas were cleared, steps 2 and 3 are closed: go to step 1.
@@ -91,6 +93,9 @@ async function loadMeta() {
     const meta = await getMeta();
     $('data-as-of').textContent = meta.dataAsOf ?? 'unknown';
     $('banner-stale').hidden = !meta.stale;
+    const optOut = optOutText(meta.mapContact);
+    $('map-optout').textContent = optOut;
+    $('map-optout').hidden = !optOut;
   } catch (err) {
     // The update banner already explains a first load in progress.
     if (!dataLoadingNotice(err, updateBanner.isRunning())) showError(err.message);
