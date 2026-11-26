@@ -6,7 +6,7 @@ export const GEOCODE_SCHEMA_VERSION = 1;
 const NONE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 function storedVersion(path) {
-  const db = new Database(path, { readonly: true });
+  const db = new Database(path, { readonly: true, timeout: 10000 });
   try {
     const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
     if (!hasMeta) return null;
@@ -22,7 +22,8 @@ export function openPointStore(path, { now = () => new Date() } = {}) {
     let version;
     try {
       version = storedVersion(path);
-    } catch {
+    } catch (err) {
+      if (err.code !== 'SQLITE_NOTADB' && err.code !== 'SQLITE_CORRUPT') throw err;
       version = 'unreadable';
     }
     if (version !== null && version !== String(GEOCODE_SCHEMA_VERSION)) {

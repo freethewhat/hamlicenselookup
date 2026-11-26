@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -107,5 +107,14 @@ test('a corrupt file is moved aside and the store starts empty', () => {
   assert.equal(store.lookup(['a']).size, 1);
   store.close();
   assert.ok(readdirSync(t.dir).some((f) => f.startsWith('geocode.db.old-')));
+  t.done();
+});
+
+test('a non-corruption open error is rethrown and nothing is moved', () => {
+  const t = tmp();
+  mkdirSync(t.path); // a directory: SQLITE_IOERR_READ, not corruption
+  assert.throws(() => openPointStore(t.path), (err) => /^SQLITE_IOERR/.test(err.code));
+  assert.ok(statSync(t.path).isDirectory());
+  assert.deepEqual(readdirSync(t.dir), ['geocode.db']);
   t.done();
 });
