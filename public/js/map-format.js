@@ -1,5 +1,6 @@
 // DOM-free helpers for the step 3 results map: messages, ham lines, links, and the map view sent to the server.
 import { displayName, CLASS_LABELS } from './format.js';
+import { dataLoadingNotice } from './status-format.js';
 
 const n = (v) => v.toLocaleString('en-US');
 
@@ -20,6 +21,13 @@ export function inViewMessage(count, shown) {
 // One ham in a pin popup or the in-view table.
 export function hamLine(h) {
   return { call: h.call, name: displayName(h), cls: CLASS_LABELS[h.op_class] ?? h.op_class ?? '', city: h.city ?? '' };
+}
+
+// Where a failed map request is reported: an expected 503 during a data update goes to the
+// map's status line (the same notice as the list view), anything else to the error banner.
+export function mapFailure(err, updateRunning) {
+  const notice = dataLoadingNotice(err, updateRunning);
+  return notice ? { status: notice, banner: null } : { status: null, banner: err.message };
 }
 
 export const lookupHref = (call) => `/lookup.html?by=call&q=${encodeURIComponent(call)}`;

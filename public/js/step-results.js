@@ -40,6 +40,7 @@ export function initResults({ selection, getFilters, getMailer = () => false, on
         tableBody: $('in-view-rows'),
         tableCountEl: $('in-view-count'),
         onError,
+        isUpdating,
       });
       if (body) resultsMap.show(body);
     } else {

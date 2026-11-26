@@ -4,7 +4,7 @@
 // Everything from the data goes in with textContent, never as HTML.
 import { prepareMap, mapPoints } from './api.js';
 import {
-  prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth, POPUP_LEFT_ROOM,
+  prepareMessage, inViewMessage, hamLine, lookupHref, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth, POPUP_LEFT_ROOM, mapFailure,
 } from './map-format.js';
 
 const POLL_MS = 3000;
@@ -55,7 +55,7 @@ function tableRow(h) {
 
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onError }) {
+export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onError, isUpdating = () => false }) {
   const tableWrap = tableBody.closest('.table-wrap');
   let map = null;
   let marks = null;
@@ -68,6 +68,12 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
   let fitted = false;
   let popupOpen = false; // a redraw removes the pin and closes its popup, so moves wait until it closes
   let viewStale = false; // the map moved while a popup was open
+
+  function fail(err) {
+    const { status, banner } = mapFailure(err, isUpdating());
+    if (status) setLiveText(statusEl, status);
+    else onError(banner);
+  }
 
   function ensureMap() {
     if (map) return;
@@ -166,7 +172,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
         }
       }
     } catch (err) {
-      if (mine === token && pmine === pointsToken) onError(err.message);
+      if (mine === token && pmine === pointsToken) fail(err);
     }
   }
 
@@ -183,7 +189,7 @@ export function createResultsMap({ el, statusEl, tableBody, tableCountEl, onErro
       }
       if (res.pending > 0) timer = setTimeout(poll, POLL_MS);
     } catch (err) {
-      if (mine === token) onError(err.message);
+      if (mine === token) fail(err);
     }
   }
 

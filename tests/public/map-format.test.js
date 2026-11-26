@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth,
+  prepareMessage, inViewMessage, hamLine, lookupHref, optOutText, viewFromBounds, clusterSize, needsPoints, isActivateKey, clusterLabel, setLiveText, popupMaxWidth, mapFailure,
 } from '../../public/js/map-format.js';
 
 test('prepareMessage while pending counts placed hams', () => {
@@ -138,4 +138,11 @@ test('popupMaxWidth keeps a pin popup inside a narrow map', () => {
   assert.equal(popupMaxWidth(800), 300); // Leaflet's default cap on a wide map
   assert.equal(popupMaxWidth(250), 148); // 320 px screen: map width less padding, edge room, and the zoom buttons
   assert.equal(popupMaxWidth(100), 120); // never squeezed below a readable width
+});
+
+test('mapFailure sends an expected 503 during an update to the status line, anything else to the banner', () => {
+  const loading = { status: 503, message: 'Data is being updated. Try again soon.' };
+  assert.deepEqual(mapFailure(loading, true), { status: 'License data is loading — see the progress above.', banner: null });
+  assert.deepEqual(mapFailure(loading, false), { status: null, banner: 'Data is being updated. Try again soon.' });
+  assert.deepEqual(mapFailure({ status: 500, message: 'Server error' }, true), { status: null, banner: 'Server error' });
 });
