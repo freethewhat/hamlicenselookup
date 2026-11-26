@@ -6,7 +6,7 @@ Find licensed amateur radio operators in an area and export them as a mailing li
 
 Pick many ZIP codes or counties at once, on a map or in a form. Filter to people who got their first license recently. Download a CSV with call sign, name, and mailing address. Our club uses the list to mail postcards to local hams and to invite new ones to join.
 
-The app keeps its own copy of the public FCC license database and updates it every day. Searches never call FCC servers.
+The app keeps its own copy of the public FCC license database and updates it every day. Searches never call FCC servers. The one outside call is the results map: it asks the US Census geocoder for map points from the server.
 
 ## Use the hosted site
 
@@ -26,6 +26,8 @@ The **Lookup** page (`/lookup.html`, linked in the header) finds licenses by cal
 
 - All license data is public. The FCC publishes it for anyone to download.
 - The site does not save your searches. It sets no cookies and has no analytics. The Lookup page remembers only which field you last searched by, in your own browser.
+- Opening the results map sends the street addresses of the matching hams (public FCC data) from the server to the [US Census geocoder](https://geocoding.geo.census.gov/), but only for addresses that have no saved map point yet. Your browser never contacts Census. The map points are saved in `geocode.db` in the data folder, so the next map of that area makes no outside call.
+- The map shows no street address or ZIP code. A ham can ask to be left off it. Add their call sign to `map-optout.txt` in the data folder, one call sign per line (`#` starts a comment). That hides their whole address from the map, for everyone who lives there, and that address is never sent to Census. They still appear in the list and the CSV.
 - Use the list to contact hams about your club. Do not use it for spam or to sell things.
 
 ## Run your own copy with Docker
@@ -65,6 +67,7 @@ Your data in `data/` stays. Stop the app with Ctrl+C, or with `docker compose do
 |---|---|---|
 | `LOAD_STATES` | `MT` | Loads only these states. Use a comma list such as `MT,ID`, or leave it empty for the whole US. A short list makes the first load fast. |
 | `AUTO_UPDATE` | `1` | Checks and updates the data each time the app starts. Set it to `0` to turn that off. |
+| `MAP_CONTACT` | empty | Email or web address shown on the results map for hams who want to be left off it. Without it, the note is hidden. |
 
 The app reads `LOAD_STATES` only when it loads the weekly FCC file. After you change it, reload the data:
 
@@ -120,6 +123,7 @@ Environment variables:
 | `DATA_DIR` | `./data` | `/data` |
 | `LOAD_STATES` | all states | from `.env` |
 | `AUTO_UPDATE` | `1` | from `.env` |
+| `MAP_CONTACT` | empty | from `.env` |
 
 ## Project layout
 
@@ -129,6 +133,7 @@ src/db/        Builds and updates the SQLite license database
 src/geo/       Builds ZIP and county tables and map shapes from Census and GeoNames files
 src/update/    Downloads files, takes the update lock, swaps in new data, reports progress
 src/search/    Turns picked areas into ZIP codes, runs searches, writes CSV
+src/map/       Results map: address keys, Census geocoder, saved map points, clustering
 src/server/    Express web server and API
 public/        The web page, plain JavaScript modules with no build step
 scripts/       Command-line tools behind the npm scripts
@@ -163,7 +168,7 @@ Read [CLAUDE.md](CLAUDE.md) first. Page changes must stay WCAG 2.2 AA compliant;
 
 ## Credits
 
-License data comes from the FCC Universal Licensing System. ZIP and county shapes come from the US Census Bureau. Place names come from GeoNames under CC-BY 4.0. Map tiles are © OpenStreetMap contributors. The Lato and Playfair Display fonts are under the SIL Open Font License.
+License data comes from the FCC Universal Licensing System. ZIP and county shapes come from the US Census Bureau. Map points for the results map come from the US Census Bureau geocoder. Place names come from GeoNames under CC-BY 4.0. Map tiles are © OpenStreetMap contributors. The Lato and Playfair Display fonts are under the SIL Open Font License.
 
 ## License
 

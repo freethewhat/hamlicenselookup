@@ -9,28 +9,8 @@ import Database from 'better-sqlite3';
 import { SCHEMA_SQL, INDEX_SQL, LICENSE_SCHEMA_VERSION } from '../../src/db/schema.js';
 import { checkSchemas } from '../../src/db/handle.js';
 import { createApp } from '../../src/server/app.js';
-import { nameKey } from '../../src/db/name-key.js';
 import { makeGeoDb } from '../helpers/geo-fixture.js';
-
-const COLS = ['usid', 'call', 'status', 'applicant_type', 'last', 'first', 'zip', 'zip5', 'trustee_call',
-  'first_license_date', 'op_class'];
-const ROWS = [
-  [1, 'K7AAA', 'A', 'I', 'TESTER', 'ALPHA', '59801', '59801', '', '2026-05-01', 'T'],
-  [2, 'K7BBB', 'A', 'I', 'TESTER', 'BETA', '59801', '59801', '', '2016-03-02', 'G'],
-  [3, 'K7CCC', 'A', 'I', 'TESTER', 'GAMMA', '59806', '59806', '', '2016-03-02', 'G'],
-];
-
-function makeLicenseDb(path, { version = LICENSE_SCHEMA_VERSION, asOf = '2026-11-10', count = ROWS.length } = {}) {
-  const db = new Database(path);
-  db.exec(SCHEMA_SQL + INDEX_SQL);
-  const meta = db.prepare('INSERT INTO meta VALUES (?, ?)');
-  meta.run('schema_version', String(version));
-  meta.run('data_as_of', asOf);
-  meta.run('license_count', String(count));
-  const ins = db.prepare(`INSERT INTO licenses (${COLS.join(',')}, last_key) VALUES (${COLS.map(() => '?').join(',')}, ?)`);
-  for (const r of ROWS) ins.run(...r, nameKey(r[COLS.indexOf('last')]));
-  db.close();
-}
+import { makeLicenseDb } from '../helpers/license-fixture.js';
 
 const COUNTIES = [{ geoid: '30063', name: 'Missoula', state: 'MT' }];
 const GEO_ZIPS = [
@@ -51,6 +31,8 @@ async function withApp(setup, opts, fn) {
     server.closeAllConnections();
     await new Promise((r) => server.close(r));
     app.locals.handle.close();
+    await app.locals.mapQueue.whenIdle();
+    app.locals.mapStore.close();
     await rm(dir, { recursive: true, force: true });
   }
 }
@@ -201,7 +183,7 @@ test('meta stale flag', async () => {
     return out;
   };
   const old = await get('2026-11-21T12:00:00Z');
-  assert.deepEqual(old, { dataAsOf: '2026-11-10', licenseCount: 3, stale: true });
+  assert.deepEqual(old, { dataAsOf: '2026-11-10', licenseCount: 3, stale: true, mapContact: '' });
   assert.equal((await get('2026-11-13T12:00:00Z')).stale, false);
 });
 
@@ -366,5 +348,80 @@ test('local font files are served and cached', async () => {
       assert.equal(res.headers.get('content-type'), 'font/woff2');
       assert.match(res.headers.get('cache-control'), /max-age=86400/);
     }
+  });
+});
+
+// ---- Results map
+
+const mapRow = (usid, call, street) => ({
+  usid, call, last: 'TESTER', first: `HAM${usid}`, street, city: 'Missoula', state: 'MT',
+  zip: '59801', zip5: '59801', first_license_date: '2026-05-01', op_class: 'T',
+});
+const mapFixture = (dir) => {
+  makeLicenseDb(join(dir, 'licenses.db'), {
+    rows: [mapRow(1, 'K7AAA', '12 Main St'), mapRow(2, 'K7BBB', '40 Oak Ave'), mapRow(3, 'K7CCC', '')],
+  });
+  makeGeoDb(join(dir, 'geo.db'), { counties: COUNTIES, zips: GEO_ZIPS });
+};
+// Fake Census: every address is a Match near Missoula.
+const censusMatch = async (url, { body }) => {
+  const csv = await body.get('addressFile').text();
+  const ids = csv.split('\r\n').filter(Boolean).map((line) => JSON.parse(line.slice(0, line.indexOf('",') + 1)));
+  const out = ids.map((id, i) => `"${id}","x","Match","Exact","x","${-114 + i / 100},46.87","1","L"`).join('\n');
+  return new Response(out);
+};
+const mapOpts = { fetchImpl: censusMatch, mapQueueOptions: { pauseMs: 0 }, mapContact: 'map@example.org' };
+const view = { bbox: { south: 24, west: -125, north: 50, east: -66 }, zoom: 16 };
+
+test('map prepare and points', async () => {
+  await withApp(mapFixture, mapOpts, async (base) => {
+    let res = await post(`${base}/api/map/prepare`, { zips: ['59801'] });
+    assert.equal(res.status, 200);
+    let body = await res.json();
+    for (const k of ['total', 'placed', 'unplaceable', 'pending']) assert.equal(typeof body[k], 'number', k);
+    assert.equal(body.total, 3);
+    assert.equal(body.unplaceable, 1);
+    assert.equal(body.error, null);
+    const seen = [JSON.stringify(body)];
+    for (let i = 0; i < 20 && body.pending > 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      body = await (await post(`${base}/api/map/prepare`, { zips: ['59801'] })).json();
+      seen.push(JSON.stringify(body));
+    }
+    assert.equal(body.pending, 0);
+    assert.equal(body.placed, 2);
+
+    res = await post(`${base}/api/map/points`, { zips: ['59801'], ...view });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    seen.push(text);
+    const pts = JSON.parse(text);
+    assert.equal(pts.pins.length, 2);
+    assert.equal(pts.inView.count, 2);
+    for (const s of seen) assert.doesNotMatch(s, /"street"/);
+  });
+});
+
+test('map points rejects a bad map view', async () => {
+  await withApp(mapFixture, mapOpts, async (base) => {
+    const box = view.bbox;
+    for (const extra of [
+      { zoom: 16 },
+      { bbox: { ...box, south: '1' }, zoom: 16 },
+      { bbox: { ...box, south: 45, north: 44 }, zoom: 16 },
+      { bbox: { ...box, north: 91 }, zoom: 16 },
+      { bbox: box, zoom: 25 },
+      { bbox: box, zoom: 3.5 },
+    ]) {
+      const res = await post(`${base}/api/map/points`, { zips: ['59801'], ...extra });
+      assert.equal(res.status, 400, JSON.stringify(extra));
+      assert.deepEqual(await res.json(), { error: 'Invalid map view' });
+    }
+  });
+});
+
+test('meta includes the map contact', async () => {
+  await withApp(mapFixture, mapOpts, async (base) => {
+    assert.equal((await (await fetch(`${base}/api/meta`)).json()).mapContact, 'map@example.org');
   });
 });

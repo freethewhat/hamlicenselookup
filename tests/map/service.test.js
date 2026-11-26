@@ -1,0 +1,155 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { createMapService } from '../../src/map/service.js';
+import { openPointStore } from '../../src/map/store.js';
+import { mapAddress } from '../../src/map/address.js';
+import { makeGeoDb } from '../helpers/geo-fixture.js';
+import { makeLicenseDb } from '../helpers/license-fixture.js';
+
+const ham = (usid, call, address) => ({
+  usid, call, last: 'TESTER', first: `HAM${usid}`, city: 'Missoula', state: 'MT',
+  zip: '59801', zip5: '59801', first_license_date: '2026-05-01', op_class: 'T', ...address,
+});
+const ROWS = [
+  ham(1, 'K7AAA', { street: '12 Main St' }),
+  ham(2, 'K7BBB', { street: '12 Main Street' }),
+  ham(3, 'K7CCC', { street: '', po_box: '486' }),
+  ham(4, 'K7DDD', { street: '99 Unknown Rd' }),
+];
+const MAIN = mapAddress(ROWS[0]).key;
+const UNKNOWN = mapAddress(ROWS[3]);
+const ZIPS = ['59801'];
+const FILTERS = { firstLicenseSince: null, includeUpgrades: false, includeExpired: false, includeClubs: false };
+const BOX = { south: 46.8, west: -114.1, north: 46.9, east: -113.9 };
+
+// A licenses.db with geo.db attached, the way openHandle serves it.
+function openDb(dir, name, rows) {
+  const path = join(dir, name);
+  makeLicenseDb(path, { rows });
+  const db = new Database(path);
+  db.prepare('ATTACH DATABASE ? AS geo').run(join(dir, 'geo.db'));
+  return db;
+}
+
+function setup({ saved = [{ key: MAIN, status: 'match', lat: 46.87, lon: -114.0 }], optOut = [], queueError = null } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'map-service-'));
+  makeGeoDb(join(dir, 'geo.db'), { counties: [{ geoid: '30063', name: 'Missoula', state: 'MT' }],
+    zips: [{ zip: '59801', state: 'MT', county_geoid: '30063' }] });
+  const db = openDb(dir, 'licenses.db', ROWS);
+  const store = openPointStore(join(dir, 'geocode.db'));
+  store.save(saved);
+  const wanted = [];
+  const pending = new Set();
+  const queue = {
+    want(items) {
+      wanted.push(items);
+      for (const i of items) pending.add(i.key);
+      return { error: null };
+    },
+    isPending: (key) => pending.has(key),
+    error: () => queueError,
+  };
+  const calls = new Set(optOut);
+  const t = {
+    dir, db, store, queue, wanted,
+    optOut: { calls: () => calls },
+    done() {
+      db.close();
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+  return t;
+}
+
+test('prepare counts placed, unplaceable, and pending hams and queues only missing addresses', () => {
+  const t = setup();
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.deepEqual(out, { total: 4, placed: 2, unplaceable: 1, pending: 1, error: null });
+  assert.deepEqual(t.wanted, [[
+    { key: UNKNOWN.key, street: '99 Unknown Rd', city: 'Missoula', state: 'MT', zip: '59801' },
+  ]]);
+  t.done();
+});
+
+test('one opted-out ham hides the whole address and it is never queued', () => {
+  const t = setup({ optOut: ['K7AAA'], saved: [] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.deepEqual(out, { total: 4, placed: 0, unplaceable: 3, pending: 1, error: null });
+  assert.ok(t.wanted.flat().every((i) => i.key !== MAIN));
+  const pts = service.points(t.db, ZIPS, FILTERS, BOX, 16);
+  assert.deepEqual(pts.pins, []);
+  t.done();
+});
+
+test('a fresh none counts as unplaceable and is not queued', () => {
+  const t = setup({ saved: [{ key: UNKNOWN.key, status: 'none', lat: null, lon: null }] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.equal(out.unplaceable, 2);
+  assert.deepEqual(t.wanted.flat().map((i) => i.key), [MAIN]);
+  t.done();
+});
+
+test('too many new addresses queues nothing', () => {
+  const t = setup({ saved: [] });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut, maxPerRequest: 1 });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.equal(out.error, 'This area has too many new addresses to map at once. Pick a smaller area.');
+  assert.equal(out.pending, 0);
+  assert.deepEqual(t.wanted, []);
+  t.done();
+});
+
+test('a queue in cool-down returns its error and queues nothing', () => {
+  const msg = 'The map service is not answering. Try again later.';
+  const t = setup({ queueError: msg });
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const out = service.prepare(t.db, ZIPS, FILTERS);
+  assert.equal(out.error, msg);
+  assert.equal(out.placed, 2);
+  assert.deepEqual(t.wanted, []);
+  t.done();
+});
+
+test('points returns pins with only the popup fields, inside the box', () => {
+  const t = setup();
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const out = service.points(t.db, ZIPS, FILTERS, BOX, 16);
+  assert.equal(out.clusters.length, 0);
+  assert.equal(out.pins.length, 1);
+  assert.deepEqual(out.pins[0].hams.map((h) => h.call), ['K7AAA', 'K7BBB']);
+  for (const h of out.pins[0].hams) {
+    assert.deepEqual(Object.keys(h).sort(), ['call', 'city', 'entity_name', 'first', 'last', 'mi', 'op_class', 'suffix']);
+  }
+  assert.equal(out.inView.count, 2);
+  assert.deepEqual(out.inView.hams.map((h) => h.call), ['K7AAA', 'K7BBB']);
+  assert.doesNotMatch(JSON.stringify(out), /"street"|"zip5"|Main/);
+
+  const away = service.points(t.db, ZIPS, FILTERS, { south: 40, west: -100, north: 41, east: -99 }, 16);
+  assert.deepEqual(away, { clusters: [], pins: [], inView: { count: 0, hams: [] } });
+  t.done();
+});
+
+test('the keyed-rows cache is per connection and expires', () => {
+  const t = setup();
+  let clock = 1_000;
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut, now: () => clock });
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 4);
+
+  const other = openDb(t.dir, 'other.db', [...ROWS, ham(5, 'K7EEE', { street: '5 Oak Ave' })]);
+  assert.equal(service.prepare(other, ZIPS, FILTERS).total, 5);
+  other.close();
+
+  t.db.prepare('DELETE FROM licenses WHERE call = ?').run('K7DDD');
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 4); // still cached
+  clock += 60_001;
+  assert.equal(service.prepare(t.db, ZIPS, FILTERS).total, 3);
+  t.done();
+});

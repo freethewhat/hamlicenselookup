@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 
-const app = createApp({ dataDir: process.env.DATA_DIR ?? './data' });
+const app = createApp({ dataDir: process.env.DATA_DIR ?? './data', mapContact: process.env.MAP_CONTACT ?? '' });
 const server = app.listen(Number(process.env.PORT ?? 3100), process.env.HOST ?? '127.0.0.1');
 
 // Start-up update in its own process, so the site keeps answering while it runs. The heap flag
@@ -28,6 +28,7 @@ async function shutdown() {
   }
   server.close(() => {
     app.locals.handle.close();
+    app.locals.mapStore.close();
     process.exit(0);
   });
   server.closeAllConnections();
