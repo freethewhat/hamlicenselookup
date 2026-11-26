@@ -58,7 +58,7 @@ function setup({ saved = [{ key: MAIN, status: 'match', lat: 46.87, lon: -114.0 
     dir, db, store, queue, wanted,
     optOut: { calls: () => calls },
     done() {
-      db.close();
+      t.db.close();
       store.close();
       rmSync(dir, { recursive: true, force: true });
     },
@@ -85,6 +85,21 @@ test('one opted-out ham hides the whole address and it is never queued', () => {
   assert.ok(t.wanted.flat().every((i) => i.key !== MAIN));
   const pts = service.points(t.db, ZIPS, FILTERS, BOX, 16);
   assert.deepEqual(pts.pins, []);
+  t.done();
+});
+
+test('an opted-out ham filtered out of the search still hides their whole address', () => {
+  const t = setup({ optOut: ['K7OLD'], saved: [] });
+  t.db.close();
+  const rows = [...ROWS, ham(9, 'K7OLD', { street: '12 Main Street', first_license_date: '2001-01-01' })];
+  t.db = openDb(t.dir, 'with-old.db', rows);
+  const service = createMapService({ store: t.store, queue: t.queue, optOut: t.optOut });
+  const since = { ...FILTERS, firstLicenseSince: '2026-01-01' };
+  const out = service.prepare(t.db, ZIPS, since);
+  assert.deepEqual(out, { total: 4, placed: 0, unplaceable: 3, pending: 1, error: null });
+  assert.deepEqual(t.wanted.flat().map((i) => i.key), [UNKNOWN.key]);
+  t.store.save([{ key: MAIN, status: 'match', lat: 46.87, lon: -114.0 }]);
+  assert.deepEqual(service.points(t.db, ZIPS, since, BOX, 16).pins, []);
   t.done();
 });
 

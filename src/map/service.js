@@ -17,7 +17,7 @@ export function createMapService({ store, queue, optOut, now = Date.now, cacheMs
   // Keyed by connection, so a reopened handle (new data) never sees another one's rows.
   const cache = new WeakMap();
 
-  // groups: key -> { item, hams, optedOut }; noStreet: hams with no street address.
+  // groups: key -> { item, hams }; noStreet: hams with no street address.
   function keyed(db, zips, filters) {
     let perDb = cache.get(db);
     if (!perDb) cache.set(db, (perDb = new Map()));
@@ -36,12 +36,10 @@ export function createMapService({ store, queue, optOut, now = Date.now, cacheMs
       if (!g) {
         g = {
           item: { key: addr.key, street: addr.street, city: row.city, state: row.state, zip: row.zip5 },
-          calls: [],
           hams: [],
         };
         groups.set(addr.key, g);
       }
-      g.calls.push(row.call);
       g.hams.push(hamView(row));
     }
     const entry = { at: t, groups, noStreet };
@@ -49,13 +47,35 @@ export function createMapService({ store, queue, optOut, now = Date.now, cacheMs
     return entry;
   }
 
+  // Address keys of every license held by an opted-out call, from all rows (any status, any
+  // filter), so a filtered-out ham still hides their whole address. Cached per connection until
+  // the opt-out list changes (createOptOut returns the same Set until the file changes).
+  const optedKeysCache = new WeakMap();
+  function optedOutKeys(db) {
+    const calls = optOut.calls();
+    const hit = optedKeysCache.get(db);
+    if (hit?.calls === calls) return hit.keys;
+    const keys = new Set();
+    if (calls.size) {
+      const rows = db
+        .prepare('SELECT call, street, po_box, city, state, zip5 FROM licenses WHERE call IN (SELECT value FROM json_each(?))')
+        .all(JSON.stringify([...calls]));
+      for (const row of rows) {
+        const addr = mapAddress(row);
+        if (addr) keys.add(addr.key);
+      }
+    }
+    optedKeysCache.set(db, { calls, keys });
+    return keys;
+  }
+
   // Addresses with no opted-out ham, plus the hams hidden by the opt-out list.
-  function visible(groups) {
-    const optedOut = optOut.calls();
+  function visible(db, groups) {
+    const optedOut = optedOutKeys(db);
     const shown = [];
     let hidden = 0;
-    for (const g of groups.values()) {
-      if (g.calls.some((c) => optedOut.has(String(c).toUpperCase()))) hidden += g.hams.length;
+    for (const [key, g] of groups) {
+      if (optedOut.has(key)) hidden += g.hams.length;
       else shown.push(g);
     }
     return { shown, hidden };
@@ -63,7 +83,7 @@ export function createMapService({ store, queue, optOut, now = Date.now, cacheMs
 
   function prepare(db, zips, filters) {
     const { groups, noStreet } = keyed(db, zips, filters);
-    const { shown, hidden } = visible(groups);
+    const { shown, hidden } = visible(db, groups);
     const points = store.lookup(shown.map((g) => g.item.key));
     let total = noStreet + hidden;
     let placed = 0;
@@ -92,7 +112,7 @@ export function createMapService({ store, queue, optOut, now = Date.now, cacheMs
 
   function points(db, zips, filters, bbox, zoom) {
     const { groups } = keyed(db, zips, filters);
-    const { shown } = visible(groups);
+    const { shown } = visible(db, groups);
     const found = store.lookup(shown.map((g) => g.item.key));
     const inBox = [];
     for (const g of shown) {

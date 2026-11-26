@@ -398,7 +398,7 @@ test('map prepare and points', async () => {
     const pts = JSON.parse(text);
     assert.equal(pts.pins.length, 2);
     assert.equal(pts.inView.count, 2);
-    for (const s of seen) assert.doesNotMatch(s, /"street"/);
+    for (const s of seen) assert.doesNotMatch(s, /"(street|zip5|zip|po_box)"/);
   });
 });
 
