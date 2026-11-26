@@ -74,17 +74,22 @@ export function createGeocodeQueue({
         }
         inflight = new Map(batch.map((e) => [e.item.key, e]));
         try {
-          const answer = await geocode(batch.map((e) => ({ ...e.item, id: e.item.key })));
+          // Census row ids are per-batch indexes, mapped back here, so no echo or quoting
+          // of an address key can make rows look missing.
+          const answer = await geocode(batch.map((e, i) => ({ ...e.item, id: String(i) })));
           const rows = [];
           for (const [id, r] of answer) {
-            if (inflight.has(id)) rows.push({ key: id, status: r.status, lat: r.lat, lon: r.lon });
+            const e = /^\d+$/.test(id) ? batch[Number(id)] : undefined;
+            if (e) rows.push({ key: e.item.key, status: r.status, lat: r.lat, lon: r.lon });
           }
+          // A 200 with no recognized rows (an outage page, say) is a failure, not an answer.
+          if (rows.length === 0) throw new Error('Census answer had no recognized rows');
           store.save(rows);
           for (const key of inflight.keys()) index.delete(key);
           failures = 0;
           inflight = new Map();
         } catch {
-          // A geocode or store.save failure is one failed batch: halve and retry.
+          // A geocode failure, an empty answer, or a store.save failure is one failed batch: halve and retry.
           const mid = Math.ceil(batch.length / 2);
           const halves = [batch.slice(0, mid), batch.slice(mid)].filter((h) => h.length);
           front = [...halves, ...front];

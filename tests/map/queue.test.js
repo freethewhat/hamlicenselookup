@@ -15,7 +15,7 @@ function setup(opts = {}) {
   let open = 0;
   let overlapped = false;
   const geocode = opts.geocode ?? (async (batch) => {
-    calls.push(batch.map((b) => b.id));
+    calls.push(batch.map((b) => b.key));
     open++;
     if (open > 1) overlapped = true;
     await new Promise((r) => setImmediate(r));
@@ -50,7 +50,7 @@ test('idle drop: keys not wanted for over idleMs are never sent', async () => {
   const clock = { t: 1_000_000 };
   const calls = [];
   const geocode = async (batch) => {
-    calls.push(batch.map((b) => b.id));
+    calls.push(batch.map((b) => b.key));
     return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
   };
   const { q } = setup({
@@ -69,7 +69,7 @@ test('retry split: a failed batch is halved and all items get saved', async () =
   const saved = [];
   let n = 0;
   const geocode = async (batch) => {
-    calls.push(batch.map((b) => b.id));
+    calls.push(batch.map((b) => b.key));
     if (n++ === 0) throw new Error('boom');
     return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
   };
@@ -117,7 +117,7 @@ test('a throwing store.save counts as a failed batch and the worker survives', a
 
 test('keys missing from the answer are dropped unsaved', async () => {
   const saved = [];
-  const geocode = async () => new Map([['a', { status: 'match', lat: 1, lon: 2 }]]);
+  const geocode = async () => new Map([['0', { status: 'match', lat: 1, lon: 2 }]]);
   const { q } = setup({ geocode, store: { save(r) { saved.push(...r); } } });
   q.want(items('a', 'b'));
   await q.whenIdle();
@@ -128,7 +128,7 @@ test('keys missing from the answer are dropped unsaved', async () => {
 test('a want() landing as the worker finishes restarts it and whenIdle waits for it', async () => {
   const calls = [];
   const geocode = async (batch) => {
-    calls.push(batch.map((b) => b.id));
+    calls.push(batch.map((b) => b.key));
     return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
   };
   let q;
@@ -160,4 +160,57 @@ test('want() of 20,000 new keys is fast even with a failed batch in front', asyn
   assert.equal(q.isPending('k19999'), true);
   release();
   await q.whenIdle();
+});
+
+test('each batch row gets a per-batch index id, mapped back to its key locally', async () => {
+  const sent = [];
+  const saved = [];
+  const geocode = async (batch) => {
+    sent.push(batch.map((b) => b.id));
+    // An answer keyed by the address key is not a recognized id.
+    return new Map([
+      ['1', { status: 'match', lat: 1, lon: 2 }],
+      ['0', { status: 'none', lat: null, lon: null }],
+      ['b', { status: 'match', lat: 9, lon: 9 }],
+    ]);
+  };
+  const { q } = setup({ geocode, store: { save(r) { saved.push(...r); } } });
+  q.want(items('a', 'b'));
+  await q.whenIdle();
+  assert.deepEqual(sent, [['0', '1']]);
+  assert.deepEqual(saved.sort((x, y) => (x.key < y.key ? -1 : 1)), [
+    { key: 'a', status: 'none', lat: null, lon: null },
+    { key: 'b', status: 'match', lat: 1, lon: 2 },
+  ]);
+});
+
+test('an answer with no recognized rows is a failed batch: halved and retried', async () => {
+  const calls = [];
+  const saved = [];
+  const waits = [];
+  let n = 0;
+  const geocode = async (batch) => {
+    calls.push(batch.map((b) => b.key));
+    if (n++ === 0) return new Map(); // e.g. an HTML outage page with HTTP 200
+    return new Map(batch.map((b) => [b.id, { status: 'match', lat: 1, lon: 2 }]));
+  };
+  const { q } = setup({
+    geocode, store: { save(r) { saved.push(...r); } }, sleep: async (ms) => { waits.push(ms); },
+  });
+  q.want(items('a', 'b', 'c', 'd'));
+  await q.whenIdle();
+  assert.deepEqual(calls.map((c) => c.length), [4, 2, 2]);
+  assert.deepEqual(saved.map((r) => r.key).sort(), ['a', 'b', 'c', 'd']);
+  assert.equal(waits[0], 2000);
+});
+
+test('repeated empty answers lead to cool-down', async () => {
+  let n = 0;
+  const geocode = async () => { n++; return new Map(); };
+  const { q } = setup({ geocode, queue: { maxFailures: 4 } });
+  q.want(items('a', 'b', 'c'));
+  await q.whenIdle();
+  assert.equal(n, 4);
+  assert.equal(q.error(), NOT_ANSWERING);
+  assert.equal(q.isPending('a'), false);
 });

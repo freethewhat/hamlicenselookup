@@ -119,12 +119,13 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- schema_version
 - `No_Match` or `Tie`: save as `'none'`.
 - A row missing from the answer: not saved, so it is tried again next time.
 - The CSV must be built with proper quoting. Addresses have commas.
+- The id column is the row's index in its batch (0, 1, 2, ...), mapped back to the address key on our side, so an id echoed or quoted oddly by Census can never look like a missing row.
 
 **The queue.** One queue in the web server process, shared by all visitors.
 
 - It sends **one batch at a time** to Census, never two at once, with a short pause between batches.
 - Batch size: up to 1,000 addresses, so the first pins show within a minute or so. (Census accepts up to 10,000 and 5 MB.)
-- Timeout per batch: a few minutes. On a timeout or HTTP error: wait and retry, splitting the batch in half each time. Nothing is saved as `'none'` because of a failure.
+- Timeout per batch: a few minutes. On a timeout, an HTTP error, or an answer with no recognized rows for the batch (an outage page sent with HTTP 200, say): wait and retry, splitting the batch in half each time. Nothing is saved as `'none'` because of a failure.
 - **Failures are global (builder-check call).** After a set number of failed tries in a row, the whole queue stops for a cool-down (about 10 minutes) and drops what it holds. During the cool-down, `/api/map/prepare` queues nothing and returns `error: "The map service is not answering. Try again later."` So polling never turns into a retry loop against Census.
 - An address already queued is not queued twice, even if two visitors ask for it.
 - Requests send a plain `User-Agent` with the app name only, like the FCC downloads.
